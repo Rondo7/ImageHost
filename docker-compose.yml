@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  imagehost:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - UPLOAD_PASSWORD=admin123
+      - PORT=8080
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data 
+    restart: unless-stopped
