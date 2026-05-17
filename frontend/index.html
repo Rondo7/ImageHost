@@ -180,7 +180,12 @@ button { font-family: var(--font); cursor: pointer; }
   padding: 8px 18px;
   display: flex; align-items: center; gap: 7px;
   overflow-x: auto; scrollbar-width: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior-x: contain;
 }
+.tagrow.dragging { cursor: grabbing; }
 .tagrow::-webkit-scrollbar { display: none; }
 .tagrow-label {
   font-size: 10px; font-weight: 600; letter-spacing: .07em;
@@ -207,10 +212,47 @@ button { font-family: var(--font); cursor: pointer; }
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 16px; gap: 8px; flex-wrap: wrap;
 }
+.bar-actions {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px; flex-wrap: wrap;
+}
 .bar-count {
   font-size: 12px; font-family: var(--mono); color: var(--c-text3);
 }
 .bar-count b { color: var(--c-text2); font-weight: 500; }
+.bulk-actions {
+  position: fixed;
+  top: 64px;
+  right: 18px;
+  z-index: 360;
+  display: none; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 4px;
+  border: 1px solid var(--c-border);
+  border-radius: 99px;
+  background: var(--c-surface2);
+  box-shadow: var(--sh-md);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.bulk-actions.show { display: flex; }
+.bulk-count {
+  padding: 0 8px;
+  font-size: 11px; font-family: var(--mono); color: var(--c-text2);
+  white-space: nowrap;
+}
+.btn-bulk {
+  height: 26px; padding: 0 9px;
+  border-radius: 99px;
+  font-size: 11px;
+}
+.btn-bulk-danger {
+  color: var(--c-red);
+  border-color: color-mix(in srgb, var(--c-red) 28%, transparent);
+}
+.btn-bulk-danger:hover {
+  color: var(--c-red);
+  background: color-mix(in srgb, var(--c-red) 10%, transparent);
+}
 
 /* ── MASONRY ── */
 .masonry {
@@ -278,6 +320,63 @@ button { font-family: var(--font); cursor: pointer; }
 @keyframes cardLoad { 0%{background-position: 120% 0} 100%{background-position: -120% 0} }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.card-select {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity .16s, transform .16s;
+  cursor: pointer;
+}
+.card:hover .card-select,
+.card.selected .card-select {
+  opacity: 1;
+  transform: translateY(0);
+}
+.card-select input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.card-select-box {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid rgba(255,255,255,.78);
+  background: rgba(0,0,0,.38);
+  box-shadow: 0 2px 10px rgba(0,0,0,.3);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: background .15s, border-color .15s;
+}
+.card-select-box svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0;
+  transform: scale(.8);
+  transition: opacity .12s, transform .12s;
+}
+.card.selected .card-select-box {
+  background: var(--c-ink);
+  border-color: var(--c-ink);
+  color: var(--c-ink-fg);
+}
+.card.selected .card-select-box svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
 /* hover action strip — slim, at the bottom */
 .card-strip {
   position: absolute; bottom: 0; left: 0; right: 0;
@@ -314,7 +413,7 @@ button { font-family: var(--font); cursor: pointer; }
 .card-action svg { width: 13px; height: 13px; }
 
 .gif-chip {
-  position: absolute; top: 8px; left: 8px;
+  position: absolute; top: 8px; right: 8px;
   z-index: 2;
   background: #e83535; color: #fff;
   border-radius: 4px; padding: 1px 5px;
@@ -586,6 +685,27 @@ button { font-family: var(--font); cursor: pointer; }
 /* ── RESPONSIVE ── */
 @media (max-width: 600px) {
   .masonry { --gap: 8px; }
+  .bulk-actions {
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-radius: var(--r);
+    padding: 10px 10px;
+  }
+  .bulk-actions::-webkit-scrollbar { display: none; }
+
+  body.bulk-actions-on .main {
+    padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+  }
+  body.bulk-actions-on .toast {
+    bottom: calc(20px + 72px + env(safe-area-inset-bottom, 0px));
+  }
   .header-search { display: none; }
   .main { padding: 12px; }
   .lb { padding: 48px 42px 72px; }
@@ -658,9 +778,18 @@ button { font-family: var(--font); cursor: pointer; }
 <div class="main">
   <div class="bar">
     <div class="bar-count" id="barCount">—</div>
-    <button class="btn" id="clearBtn" style="display:none;font-size:12px;height:28px;padding:0 10px" onclick="clearFilters()">
-      清除筛选
-    </button>
+    <div class="bar-actions">
+      <div class="bulk-actions" id="bulkActions">
+        <span class="bulk-count" id="bulkCount">已选 0</span>
+        <button class="btn btn-bulk" onclick="batchCopyUrls()">复制 URL</button>
+        <button class="btn btn-bulk" onclick="batchDownloadImages()">下载</button>
+        <button class="btn btn-bulk btn-bulk-danger" id="bulkDeleteBtn" onclick="batchDeleteImages()">删除</button>
+        <button class="btn btn-bulk" onclick="clearSelection()">取消</button>
+      </div>
+      <button class="btn" id="clearBtn" style="display:none;font-size:12px;height:28px;padding:0 10px" onclick="clearFilters()">
+        清除筛选
+      </button>
+    </div>
   </div>
   <div class="masonry" id="gallery"></div>
   <div id="sentinel"></div>
@@ -792,6 +921,7 @@ let activeTags=[], q='';
 let pwd='';
 let files=[], chips=[];
 let imgs=[], lbIdx=0;
+let selectedIds = new Set();
 let lbW='', lbO='', lbFn='';
 let io=null, galleryRO=null, scrolledForMore=false, suppressScrollArm=false, loadSeq=0, layoutRAF=0;
 
@@ -829,6 +959,7 @@ function setAuth(p){
   document.querySelectorAll('.card-action.del').forEach(b => {
     b.style.display = p ? '' : 'none';
   });
+  updateSelectionUI();
 }
 function logout(){
   setAuth('');
@@ -853,6 +984,7 @@ async function init(){
   await loadTags();
   await loadImgs(true);
   setupIO();
+  setupTagRowMouseScroll();
   window.addEventListener('resize', debounce(scheduleGalleryLayout, 120));
   if('ResizeObserver' in window){
     galleryRO = new ResizeObserver(()=>scheduleGalleryLayout());
@@ -913,6 +1045,61 @@ function clearFilters(){
   document.getElementById('clearBtn').style.display='none';
   syncTags(); loadImgs(true);
 }
+function setupTagRowMouseScroll(){
+  const row = document.getElementById('tagrow');
+  if(!row) return;
+
+  let dragging=false, moved=false, suppressClickUntil=0, startX=0, startY=0, startLeft=0;
+  row.addEventListener('wheel', e=>{
+    if(row.scrollWidth<=row.clientWidth) return;
+    const delta = Math.abs(e.deltaX)>Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if(delta===0) return;
+    row.scrollLeft += delta;
+    e.preventDefault();
+  }, {passive:false});
+
+  row.addEventListener('pointerdown', e=>{
+    if(e.pointerType==='mouse' && e.button!==0) return;
+    dragging=true;
+    moved=false;
+    startX=e.clientX;
+    startY=e.clientY;
+    startLeft=row.scrollLeft;
+  });
+  row.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const dx=e.clientX-startX;
+    const dy=e.clientY-startY;
+    if(!moved && Math.abs(dx)>6 && Math.abs(dx)>Math.abs(dy)){
+      moved=true;
+      suppressClickUntil=Date.now()+250;
+      row.classList.add('dragging');
+      try{ row.setPointerCapture(e.pointerId); }catch(err){}
+    }
+    if(moved){
+      row.scrollLeft=startLeft-dx;
+      e.preventDefault();
+    }
+  });
+  const stopDrag=e=>{
+    if(!dragging) return;
+    dragging=false;
+    row.classList.remove('dragging');
+    try{ row.releasePointerCapture(e.pointerId); }catch(err){}
+    setTimeout(()=>{
+      moved=false;
+    }, 0);
+  };
+  row.addEventListener('pointerup', stopDrag);
+  row.addEventListener('pointercancel', stopDrag);
+  row.addEventListener('click', e=>{
+    if(Date.now()<suppressClickUntil){
+      suppressClickUntil=0;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+}
 
 /* ────────────────────────────────── GALLERY */
 async function loadImgs(reset=false){
@@ -924,6 +1111,7 @@ async function loadImgs(reset=false){
     page=1;
     done=false;
     scrolledForMore=false;
+    clearSelection();
     imgs=[];
     document.getElementById('gallery').innerHTML='';
     document.getElementById('emptyState').style.display='none';
@@ -1056,6 +1244,12 @@ function appendCard(img){
 
   div.innerHTML = `
     ${img.is_gif ? '<div class="gif-chip">GIF</div>' : ''}
+    <label class="card-select" title="选择图片" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+      <input type="checkbox" onchange="toggleSelect(${img.id}, this.checked)">
+      <span class="card-select-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+      </span>
+    </label>
     <img alt="" decoding="async" width="${w}" height="${h}">
     <div class="card-strip">
       <div class="card-tags-row">${tagsHtml}</div>
@@ -1093,6 +1287,96 @@ function appendCard(img){
 function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function jsString(s){ return JSON.stringify(String(s)); }
 function filterTag(name){ if(!activeTags.includes(name)){ activeTags.push(name); syncTags(); document.getElementById('clearBtn').style.display=''; loadImgs(true); } }
+
+function imageById(id){
+  return imgs.find(x=>String(x.id)===String(id));
+}
+function selectedImages(){
+  return [...selectedIds].map(imageById).filter(Boolean);
+}
+function updateSelectionUI(){
+  document.querySelectorAll('#gallery .card').forEach(card=>{
+    const on = selectedIds.has(Number(card.dataset.id));
+    card.classList.toggle('selected', on);
+    const box = card.querySelector('.card-select input');
+    if(box) box.checked = on;
+  });
+  const count = selectedIds.size;
+  const actions = document.getElementById('bulkActions');
+  const countEl = document.getElementById('bulkCount');
+  const delBtn = document.getElementById('bulkDeleteBtn');
+  if(actions) actions.classList.toggle('show', count>0);
+  document.body.classList.toggle('bulk-actions-on', count>0);
+  if(countEl) countEl.textContent = `已选 ${count}`;
+  if(delBtn) delBtn.style.display = pwd ? '' : 'none';
+}
+function toggleSelect(id, checked){
+  id = Number(id);
+  if(checked) selectedIds.add(id);
+  else selectedIds.delete(id);
+  updateSelectionUI();
+}
+function clearSelection(){
+  selectedIds.clear();
+  updateSelectionUI();
+}
+function selectedWebpUrls(){
+  return selectedImages().map(img=>location.origin + img.webp_url);
+}
+async function batchCopyUrls(){
+  const urls = selectedWebpUrls();
+  if(!urls.length){ toast('请先选择图片','bad'); return; }
+  const text = urls.join('\n');
+  const ok = await smartCopy(text);
+  if(ok) toast(`已复制 ${urls.length} 个链接`);
+  else prompt('复制链接：', text);
+}
+function batchDownloadImages(){
+  const list = selectedImages();
+  if(!list.length){ toast('请先选择图片','bad'); return; }
+  list.forEach((img,i)=>{
+    const name = img.orig_url.split('/').pop();
+    setTimeout(()=>dlFile(img.orig_url, name), i*180);
+  });
+  toast(`开始下载 ${list.length} 张图片`);
+}
+async function batchDeleteImages(){
+  if(!pwd){ toast('请先登录后再删除','bad'); return; }
+  const list = selectedImages();
+  if(!list.length){ toast('请先选择图片','bad'); return; }
+  if(!confirm(`确定删除选中的 ${list.length} 张图片？`)) return;
+
+  let ok = 0;
+  for(const img of list){
+    try{
+      const r = await fetch(`/api/images/${img.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${pwd}`}});
+      if(r.status===401){
+        setAuth('');
+        try{ localStorage.removeItem(PWKEY); }catch(e){}
+        toast('登录已失效','bad');
+        break;
+      }
+      if(r.ok){
+        ok++;
+        selectedIds.delete(Number(img.id));
+        document.querySelector(`[data-id="${img.id}"]`)?.remove();
+        const i=imgs.findIndex(x=>x.id===img.id); if(i!==-1) imgs.splice(i,1);
+      }
+    }catch(e){}
+  }
+  if(ok){
+    total=Math.max(0,total-ok);
+    document.getElementById('barCount').innerHTML=`<b>${total}</b> 张图片`;
+    document.getElementById('emptyState').style.display = total===0 ? '' : 'none';
+    updateSelectionUI();
+    scheduleGalleryLayout();
+    await loadTags();
+    toast(`已删除 ${ok} 张图片`);
+  } else {
+    updateSelectionUI();
+    toast('删除失败','bad');
+  }
+}
 
 /* ────────────────────────────────── COPY / DOWNLOAD */
 async function copyUrl(url, btn){
@@ -1261,8 +1545,10 @@ async function delImg(id){
     if(r.ok){
       document.querySelector(`[data-id="${id}"]`)?.remove();
       const i=imgs.findIndex(x=>x.id===id); if(i!==-1) imgs.splice(i,1);
+      selectedIds.delete(Number(id));
       total=Math.max(0,total-1); document.getElementById('barCount').innerHTML=`<b>${total}</b> 张图片`;
       document.getElementById('emptyState').style.display = total===0 ? '' : 'none';
+      updateSelectionUI();
       scheduleGalleryLayout();
       toast('已删除'); await loadTags();
     } else toast('删除失败','bad');
