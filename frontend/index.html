@@ -534,14 +534,42 @@ button { font-family: var(--font); cursor: pointer; }
 
 .flist { margin-top: 9px; max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .fitem {
-  display: flex; align-items: center; gap: 8px; padding: 7px 9px;
+  display: flex; align-items: center; gap: 8px; padding: 6px 7px;
   background: var(--c-surface2); border-radius: var(--r-sm); border: 1px solid var(--c-border);
 }
+.fitem-thumb {
+  width: 34px; height: 34px; border-radius: var(--r-xs); object-fit: cover;
+  background: var(--c-surface3); border: 1px solid var(--c-border); flex-shrink: 0;
+}
+.fitem-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fitem-meta { display: flex; align-items: center; gap: 7px; }
 .fitem-name { flex: 1; font-size: 11px; font-family: var(--mono); color: var(--c-text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fitem-sz { font-size: 10px; color: var(--c-text3); white-space: nowrap; }
 .fitem-st { font-size: 11px; white-space: nowrap; color: var(--c-text3); font-family: var(--mono); }
 .fitem-st.ok { color: var(--c-green); }
 .fitem-st.er { color: var(--c-red); }
+.fitem-rm {
+  width: 24px; height: 24px; border-radius: var(--r-xs);
+  border: 1px solid color-mix(in srgb, var(--c-red) 30%, transparent);
+  background: color-mix(in srgb, var(--c-red) 10%, transparent); color: var(--c-red);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; line-height: 0; flex-shrink: 0; transition: all .15s;
+}
+.fitem-rm:hover { background: color-mix(in srgb, var(--c-red) 18%, transparent); border-color: color-mix(in srgb, var(--c-red) 45%, transparent); }
+.fitem-rm:disabled { opacity: .35; cursor: not-allowed; }
+.flist-head {
+  display: none; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 10px;
+}
+.flist-head.show { display: flex; }
+.flist-title { font-size: 11px; font-family: var(--mono); color: var(--c-text3); }
+.btn-clear-files {
+  height: 24px; padding: 0 9px; border-radius: 99px;
+  border: 1px solid color-mix(in srgb, var(--c-red) 35%, transparent);
+  background: color-mix(in srgb, var(--c-red) 10%, transparent);
+  color: var(--c-red); font-size: 11px; font-weight: 600;
+}
+.btn-clear-files:hover { background: color-mix(in srgb, var(--c-red) 18%, transparent); }
 
 /* tags input */
 .tags-box {
@@ -557,10 +585,14 @@ button { font-family: var(--font); cursor: pointer; }
   border-radius: 99px; font-size: 12px; color: var(--c-text); font-weight: 500;
 }
 .tchip-x {
-  background: none; border: none; color: var(--c-text3);
-  cursor: pointer; font-size: 14px; padding: 0; line-height: 1; transition: color .15s;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: color-mix(in srgb, var(--c-red) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-red) 28%, transparent);
+  color: var(--c-red); cursor: pointer; font-size: 13px; padding: 0;
+  line-height: 0; display: inline-flex; align-items: center; justify-content: center;
+  transition: all .15s;
 }
-.tchip-x:hover { color: var(--c-text); }
+.tchip-x:hover { background: color-mix(in srgb, var(--c-red) 18%, transparent); }
 .ttxt {
   background: none; border: none; outline: none;
   color: var(--c-text); font-family: var(--font); font-size: 13px; min-width: 80px; flex: 1;
@@ -840,13 +872,12 @@ button { font-family: var(--font); cursor: pointer; }
       <button class="sheet-x" onclick="closeUpload()">✕</button>
     </div>
     <div class="sheet-body">
-      <div class="drop" id="dz" onclick="document.getElementById('fileInput').click()">
-        <input type="file" id="fileInput" multiple accept="image/*" onchange="onFiles(this.files)">
+      <div class="drop" id="dz">
+        <input type="file" id="fileInput" multiple accept="image/*">
         <div class="drop-icon">⊕</div>
         <div class="drop-text">点击选择或拖放图片</div>
         <div class="drop-hint">支持批量</div>
       </div>
-      <div class="flist" id="flist"></div>
       <div class="up-ok" id="upOk"></div>
       <div class="field" style="margin-top:12px">
         <label class="label">
@@ -857,6 +888,11 @@ button { font-family: var(--font); cursor: pointer; }
           <input type="text" id="tagTxt" class="ttxt" placeholder="添加标签…" onkeydown="onTagKey(event)">
         </div>
       </div>
+      <div class="flist-head" id="flistHead">
+        <span class="flist-title" id="flistTitle">待上传 0 张</span>
+        <button class="btn-clear-files" type="button" onclick="clearAllPendingFiles()">清空全部</button>
+      </div>
+      <div class="flist" id="flist"></div>
     </div>
     <div class="sheet-foot">
       <button class="btn" onclick="closeUpload()">取消</button>
@@ -993,11 +1029,16 @@ async function init(){
   document.getElementById('searchInput').addEventListener('input', debounce(e=>{
     q = e.target.value.trim(); loadImgs(true);
   }, 320));
+  document.getElementById('fileInput').addEventListener('change', e => onFiles(e.target.files));
   document.getElementById('lb').addEventListener('click', e=>{
     const p = document.getElementById('urlPanel');
     if(!p.contains(e.target) && !e.target.closest('.lbtn')) p.classList.remove('on');
   });
+
   const dz = document.getElementById('dz');
+  dz.addEventListener('click', e=>{
+    if(e.target.id !== 'fileInput') document.getElementById('fileInput').click();
+  });
   dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('over');});
   dz.addEventListener('dragleave', ()=>dz.classList.remove('over'));
   dz.addEventListener('drop', e=>{e.preventDefault();dz.classList.remove('over');onFiles(e.dataTransfer.files);});
@@ -1462,20 +1503,55 @@ async function submitAuth(){
 function openUpload(){
   document.getElementById('upOk').style.display='none';
   document.getElementById('flist').innerHTML='';
-  files=[]; chips=[]; renderChips();
+  document.getElementById('fileInput').value = '';
+  clearPendingFiles(); chips=[]; renderChips();
+  renderFileList();
   document.getElementById('uploadBackdrop').classList.add('open');
 }
 function closeUpload(){ document.getElementById('uploadBackdrop').classList.remove('open'); }
+function clearPendingFiles(){
+  files.forEach(f=>{ if(f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
+  files=[];
+}
+function clearAllPendingFiles(){
+  clearPendingFiles();
+  renderFileList();
+  document.getElementById('fileInput').value = '';
+}
 function onFiles(f){
-  files=[...f]; const list=document.getElementById('flist'); list.innerHTML='';
-  files.forEach((file,i)=>{
+  if(!f || f.length === 0) return;
+  const next=Array.from(f).map(file=>({ file, previewUrl: URL.createObjectURL(file) }));
+  files=files.concat(next);
+  renderFileList();
+  document.getElementById('fileInput').value = '';
+}
+function renderFileList(){
+  const list=document.getElementById('flist'); list.innerHTML='';
+  const head=document.getElementById('flistHead');
+  const title=document.getElementById('flistTitle');
+  if(head) head.classList.toggle('show', files.length>0);
+  if(title) title.textContent=`待上传 ${files.length} 张`;
+  files.forEach((item,i)=>{
+    const file=item.file;
     const el=document.createElement('div'); el.className='fitem'; el.id=`fi${i}`;
-    el.innerHTML=`<span style="font-size:14px">${file.name.endsWith('.gif')?'◼':'◻'}</span>
-      <span class="fitem-name">${file.name}</span>
-      <span class="fitem-sz">${fmtSz(file.size)}</span>
-      <span class="fitem-st" id="fs${i}">待上传</span>`;
+    el.innerHTML=`<img class="fitem-thumb" src="${item.previewUrl}" alt="">
+      <div class="fitem-main">
+        <span class="fitem-name" title="${esc(file.name)}">${esc(file.name)}</span>
+        <div class="fitem-meta">
+          <span class="fitem-sz">${fmtSz(file.size)}</span>
+          <span class="fitem-st" id="fs${i}">待上传</span>
+        </div>
+      </div>
+      <button class="fitem-rm" type="button" title="移除" onclick="removePendingFile(${i})">✕</button>`;
     list.appendChild(el);
   });
+}
+function removePendingFile(i){
+  const item=files[i];
+  if(!item) return;
+  if(item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  files.splice(i,1);
+  renderFileList();
 }
 function fmtSz(b){ return b<1048576 ? (b/1024).toFixed(1)+'KB' : (b/1048576).toFixed(1)+'MB'; }
 function onTagKey(e){
@@ -1490,7 +1566,7 @@ function renderChips(){
   const inp=document.getElementById('tagTxt');
   chips.forEach((t,i)=>{
     const c=document.createElement('span'); c.className='tchip';
-    c.innerHTML=`${t}<button class="tchip-x" onclick="rmChip(${i})">×</button>`;
+    c.innerHTML=`${t}<button class="tchip-x" onclick="rmChip(${i})">✕</button>`;
     box.insertBefore(c,inp);
   });
 }
@@ -1499,8 +1575,9 @@ async function doUpload(){
   const tv=document.getElementById('tagTxt').value.trim();
   if(tv){ if(!chips.includes(tv)) chips.push(tv); document.getElementById('tagTxt').value=''; renderChips(); }
   const btn=document.getElementById('doUpBtn'); btn.disabled=true; btn.textContent='上传中…';
+  document.querySelectorAll('.fitem-rm').forEach(b=>b.disabled=true);
   const pid=`up_${Date.now()}`; const fd=new FormData();
-  files.forEach(f=>fd.append('files',f)); fd.append('tags',chips.join(',')); fd.append('progress_id',pid);
+  files.forEach(item=>fd.append('files',item.file)); fd.append('tags',chips.join(',')); fd.append('progress_id',pid);
   files.forEach((_,i)=>watchProg(`${pid}_${i}`,i));
   try{
     const r=await fetch('/api/upload',{method:'POST',headers:{Authorization:`Bearer ${pwd}`},body:fd});
@@ -1518,6 +1595,7 @@ async function doUpload(){
     setTimeout(closeUpload,1600);
   }catch(e){ toast('上传出错','bad'); }
   btn.disabled=false;
+  document.querySelectorAll('.fitem-rm').forEach(b=>b.disabled=false);
   btn.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 开始上传';
 }
 function watchProg(key,idx){
