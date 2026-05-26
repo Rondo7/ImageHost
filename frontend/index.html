@@ -604,6 +604,27 @@ button { font-family: var(--font); cursor: pointer; }
   border-radius: var(--r-sm); font-size: 12px; color: var(--c-green); display: none;
 }
 
+.page-drop-hint {
+  position: fixed; inset: 0; z-index: 650;
+  display: none; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--c-bg) 72%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.page-drop-hint.show { display: flex; }
+.page-drop-card {
+  width: min(420px, calc(100vw - 40px));
+  padding: 28px 26px;
+  border-radius: 22px;
+  border: 1.5px dashed var(--c-border2);
+  background: var(--c-surface);
+  box-shadow: var(--sh-lg);
+  text-align: center;
+}
+.page-drop-icon { font-size: 34px; color: var(--c-text2); margin-bottom: 8px; }
+.page-drop-title { font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
+.page-drop-sub { margin-top: 4px; font-size: 13px; color: var(--c-text2); }
+
 /* ── LIGHTBOX ── */
 .lb {
   display: none; position: fixed; inset: 0;
@@ -949,6 +970,14 @@ button { font-family: var(--font); cursor: pointer; }
 
 <div class="toast" id="toast"></div>
 
+<div class="page-drop-hint" id="pageDropHint">
+  <div class="page-drop-card">
+    <div class="page-drop-icon">⊕</div>
+    <div class="page-drop-title">松开以加入上传队列</div>
+    <div class="page-drop-sub">可直接把图片拖拽到网页中上传</div>
+  </div>
+</div>
+
 <script>
 /* ────────────────────────────────── STATE */
 const PWKEY = 'ih_pwd';
@@ -1021,6 +1050,7 @@ async function init(){
   await loadImgs(true);
   setupIO();
   setupTagRowMouseScroll();
+  setupPageImageDrop();
   window.addEventListener('resize', debounce(scheduleGalleryLayout, 120));
   if('ResizeObserver' in window){
     galleryRO = new ResizeObserver(()=>scheduleGalleryLayout());
@@ -1041,7 +1071,49 @@ async function init(){
   });
   dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('over');});
   dz.addEventListener('dragleave', ()=>dz.classList.remove('over'));
-  dz.addEventListener('drop', e=>{e.preventDefault();dz.classList.remove('over');onFiles(e.dataTransfer.files);});
+  dz.addEventListener('drop', e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('over');onFiles(e.dataTransfer.files);});
+}
+
+function hasDraggedImages(e){
+  const items = e.dataTransfer && e.dataTransfer.items;
+  if(items && items.length) return Array.from(items).some(item=>item.kind==='file' && item.type.startsWith('image/'));
+  const types = e.dataTransfer && e.dataTransfer.types;
+  return !!types && Array.from(types).includes('Files');
+}
+function imageFilesFromDataTransfer(dt){
+  return Array.from(dt.files||[]).filter(file=>file.type.startsWith('image/'));
+}
+function setupPageImageDrop(){
+  const hint = document.getElementById('pageDropHint');
+  let dragDepth = 0;
+
+  window.addEventListener('dragenter', e=>{
+    if(!hasDraggedImages(e)) return;
+    dragDepth++;
+    hint.classList.add('show');
+  });
+  window.addEventListener('dragover', e=>{
+    if(!hasDraggedImages(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    hint.classList.add('show');
+  });
+  window.addEventListener('dragleave', e=>{
+    if(!hasDraggedImages(e)) return;
+    dragDepth=Math.max(0,dragDepth-1);
+    if(dragDepth===0) hint.classList.remove('show');
+  });
+  window.addEventListener('drop', e=>{
+    if(!hasDraggedImages(e)) return;
+    e.preventDefault();
+    dragDepth=0;
+    hint.classList.remove('show');
+    const dropped = imageFilesFromDataTransfer(e.dataTransfer);
+    if(!dropped.length){ toast('请拖入图片文件','bad'); return; }
+    if(!pwd){ openAuth(); toast('请先登录后再上传','bad'); return; }
+    if(!document.getElementById('uploadBackdrop').classList.contains('open')) openUpload(false);
+    onFiles(dropped);
+  });
 }
 
 /* ────────────────────────────────── TAGS */
@@ -1500,11 +1572,13 @@ async function submitAuth(){
 }
 
 /* ────────────────────────────────── UPLOAD */
-function openUpload(){
+function openUpload(reset=true){
   document.getElementById('upOk').style.display='none';
-  document.getElementById('flist').innerHTML='';
   document.getElementById('fileInput').value = '';
-  clearPendingFiles(); chips=[]; renderChips();
+  if(reset){
+    document.getElementById('flist').innerHTML='';
+    clearPendingFiles(); chips=[]; renderChips();
+  }
   renderFileList();
   document.getElementById('uploadBackdrop').classList.add('open');
 }
