@@ -989,6 +989,9 @@ let imgs=[], lbIdx=0;
 let selectedIds = new Set();
 let lbW='', lbO='', lbFn='';
 let io=null, galleryRO=null, scrolledForMore=false, suppressScrollArm=false, loadSeq=0, layoutRAF=0;
+const VIRTUAL_MAX = 100;
+const VIRTUAL_BUFFER = 50;
+let virtualPositions=[], renderedCards=new Map(), virtualRAF=0;
 
 /* ────────────────────────────────── THEME */
 function toggleTheme(){
@@ -1086,17 +1089,18 @@ function imageFilesFromDataTransfer(dt){
 function setupPageImageDrop(){
   const hint = document.getElementById('pageDropHint');
   let dragDepth = 0;
+  const uploadOpen = ()=>document.getElementById('uploadBackdrop').classList.contains('open');
 
   window.addEventListener('dragenter', e=>{
     if(!hasDraggedImages(e)) return;
     dragDepth++;
-    hint.classList.add('show');
+    if(!uploadOpen()) hint.classList.add('show');
   });
   window.addEventListener('dragover', e=>{
     if(!hasDraggedImages(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
-    hint.classList.add('show');
+    hint.classList.toggle('show', !uploadOpen());
   });
   window.addEventListener('dragleave', e=>{
     if(!hasDraggedImages(e)) return;
@@ -1111,7 +1115,7 @@ function setupPageImageDrop(){
     const dropped = imageFilesFromDataTransfer(e.dataTransfer);
     if(!dropped.length){ toast('请拖入图片文件','bad'); return; }
     if(!pwd){ openAuth(); toast('请先登录后再上传','bad'); return; }
-    if(!document.getElementById('uploadBackdrop').classList.contains('open')) openUpload(false);
+    if(!uploadOpen()) openUpload(false);
     onFiles(dropped);
   });
 }
@@ -1226,6 +1230,9 @@ async function loadImgs(reset=false){
     scrolledForMore=false;
     clearSelection();
     imgs=[];
+    virtualPositions=[];
+    renderedCards.clear();
+    cancelAnimationFrame(virtualRAF);
     document.getElementById('gallery').innerHTML='';
     document.getElementById('emptyState').style.display='none';
     showSkels();
@@ -1251,7 +1258,7 @@ async function loadImgs(reset=false){
     total = d.total||0;
     if(reset) document.querySelectorAll('.skel').forEach(s=>s.remove());
     const batch = d.images||[];
-    batch.forEach(img=>{ imgs.push(img); appendCard(img); });
+    batch.forEach(img=>{ imgs.push(img); });
     done = imgs.length >= total || batch.length < PG;
     document.getElementById('emptyState').style.display = total===0 ? '' : 'none';
     const f = activeTags.length ? ` · ${activeTags.join(', ')}` : q ? ` · "${q}"` : '';
@@ -1316,31 +1323,122 @@ function layoutGallery(){
   const colHeights = Array(cols).fill(0);
   g.style.setProperty('--cols', cols);
 
-  document.querySelectorAll('#gallery .card,#gallery .skel').forEach(el=>{
-    const orientation = el.dataset.orientation || 'portrait';
+  const skels = document.querySelectorAll('#gallery .skel');
+  if(skels.length){
+    skels.forEach(el=>{
+      const orientation = el.dataset.orientation || 'portrait';
+      const ratio = getCardRatio(orientation);
+      const height = Math.round(width / ratio);
+      const minHeight = Math.min(...colHeights);
+      const col = colHeights.indexOf(minHeight);
+      const x = col * (width + gap);
+      const y = colHeights[col];
+
+      el.style.width = `${width}px`;
+      el.style.height = `${height}px`;
+      el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      colHeights[col] += height + gap;
+    });
+
+    const skeletonHeight = Math.max(0, Math.max(...colHeights) - gap);
+    g.style.height = `${skeletonHeight}px`;
+    return;
+  }
+
+  virtualPositions = imgs.map(img=>{
+    const orientation = getImageOrientation(img);
     const ratio = getCardRatio(orientation);
     const height = Math.round(width / ratio);
     const minHeight = Math.min(...colHeights);
     const col = colHeights.indexOf(minHeight);
     const x = col * (width + gap);
     const y = colHeights[col];
-
-    el.style.width = `${width}px`;
-    el.style.height = `${height}px`;
-    el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
     colHeights[col] += height + gap;
+
+    return { id: Number(img.id), x, y, width, height, orientation };
   });
 
   const galleryHeight = Math.max(0, Math.max(...colHeights) - gap);
   g.style.height = `${galleryHeight}px`;
+  updateVirtualCards();
 }
 function markImageLoaded(card, ok=true){
   card.classList.remove('loading');
   card.classList.toggle('loaded', ok);
   card.classList.toggle('error', !ok);
 }
-function appendCard(img){
+function scheduleVirtualCards(){
+  cancelAnimationFrame(virtualRAF);
+  virtualRAF = requestAnimationFrame(updateVirtualCards);
+}
+function getVisibleVirtualRange(){
+  if(!virtualPositions.length) return {start:0,end:-1};
   const g = document.getElementById('gallery');
+  const top = window.scrollY - g.offsetTop;
+  const bottom = top + window.innerHeight;
+  let first = -1;
+  let last = -1;
+  virtualPositions.forEach((p,i)=>{
+    if(p.y + p.height < top || p.y > bottom) return;
+    if(first === -1) first = i;
+    last = i;
+  });
+  if(first === -1){
+    first = virtualPositions.findIndex(p=>p.y >= top);
+    if(first < 0) first = Math.max(0, virtualPositions.length - 1);
+    last = first;
+  }
+
+  let start = Math.max(0, first - VIRTUAL_BUFFER);
+  let end = Math.min(virtualPositions.length - 1, last + VIRTUAL_BUFFER);
+  if(end - start + 1 > VIRTUAL_MAX){
+    const mid = Math.floor((first + last) / 2);
+    start = Math.max(0, mid - Math.floor(VIRTUAL_MAX / 2));
+    end = Math.min(virtualPositions.length - 1, start + VIRTUAL_MAX - 1);
+    start = Math.max(0, end - VIRTUAL_MAX + 1);
+  }
+  return {start,end};
+}
+function updateVirtualCards(){
+  const g = document.getElementById('gallery');
+  if(!g || document.querySelector('#gallery .skel')) return;
+  const {start,end} = getVisibleVirtualRange();
+  const keep = new Set();
+
+  for(let i=start;i<=end;i++){
+    const pos = virtualPositions[i];
+    const img = imgs[i];
+    if(!pos || !img) continue;
+    const id = Number(img.id);
+    keep.add(id);
+    let card = renderedCards.get(id);
+    if(!card){
+      card = createCard(img);
+      renderedCards.set(id, card);
+      g.appendChild(card);
+    }
+    card.style.width = `${pos.width}px`;
+    card.style.height = `${pos.height}px`;
+    card.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
+    card.dataset.orientation = pos.orientation;
+    card.classList.toggle('selected', selectedIds.has(id));
+    const box = card.querySelector('.card-select input');
+    if(box) box.checked = selectedIds.has(id);
+  }
+
+  renderedCards.forEach((card,id)=>{
+    if(keep.has(id)) return;
+    card.remove();
+    renderedCards.delete(id);
+  });
+}
+function appendCard(img){
+  const div = createCard(img);
+  document.getElementById('gallery').appendChild(div);
+  renderedCards.set(Number(img.id), div);
+  scheduleGalleryLayout();
+}
+function createCard(img){
   const div = document.createElement('div');
   const orientation = getImageOrientation(img);
   div.className=`card loading is-${orientation}`;
@@ -1386,8 +1484,6 @@ function appendCard(img){
     markImageLoaded(div, false);
   }, {once:true});
   div.addEventListener('click', ()=>openLb(imgs.findIndex(x=>x.id===img.id)));
-  g.appendChild(div);
-  scheduleGalleryLayout();
   imageEl.src = src;
   if(imageEl.decode){
     imageEl.decode().then(()=>markImageLoaded(div, true)).catch(()=>{});
@@ -1396,6 +1492,7 @@ function appendCard(img){
   setTimeout(()=>{
     if(imageEl.complete) markImageLoaded(div, imageEl.naturalWidth>0);
   }, 800);
+  return div;
 }
 function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function jsString(s){ return JSON.stringify(String(s)); }
@@ -1473,6 +1570,7 @@ async function batchDeleteImages(){
         ok++;
         selectedIds.delete(Number(img.id));
         document.querySelector(`[data-id="${img.id}"]`)?.remove();
+        renderedCards.delete(Number(img.id));
         const i=imgs.findIndex(x=>x.id===img.id); if(i!==-1) imgs.splice(i,1);
       }
     }catch(e){}
@@ -1536,9 +1634,11 @@ function setupIO(){
 
   const armScrollLoading = ()=>{
     if(suppressScrollArm) return;
+    scheduleVirtualCards();
     scrolledForMore = true;
     if(!loading && !done && sentinelIsNear()) loadImgs(false);
   };
+  window.addEventListener('scroll', scheduleVirtualCards, {passive:true});
   window.addEventListener('scroll', armScrollLoading, {passive:true});
   window.addEventListener('wheel', armScrollLoading, {passive:true});
   window.addEventListener('touchmove', armScrollLoading, {passive:true});
@@ -1696,6 +1796,7 @@ async function delImg(id){
     const r=await fetch(`/api/images/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${p}`}});
     if(r.ok){
       document.querySelector(`[data-id="${id}"]`)?.remove();
+      renderedCards.delete(Number(id));
       const i=imgs.findIndex(x=>x.id===id); if(i!==-1) imgs.splice(i,1);
       selectedIds.delete(Number(id));
       total=Math.max(0,total-1); document.getElementById('barCount').innerHTML=`<b>${total}</b> 张图片`;
