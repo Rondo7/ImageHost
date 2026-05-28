@@ -1,0 +1,13 @@
+.git
+.github
+.gocache
+.vscode
+.idea
+data
+uploads
+dist
+imagehost
+imagehost.exe
+*.log
+.env
+.env.*
