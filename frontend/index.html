@@ -685,6 +685,45 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .lbtn:hover { background: rgba(255,255,255,.16); color: #fff; }
 .lbtn.copied { background: color-mix(in srgb, var(--c-green) 18%, transparent); border-color: color-mix(in srgb, var(--c-green) 35%, transparent); color: var(--c-green); }
+.lbtn.editing { background: rgba(255,255,255,.16); color: #fff; }
+
+.lb-tag-editor {
+  display: none; position: absolute; bottom: 60px;
+  left: 50%; transform: translateX(-50%);
+  width: min(94vw, 440px);
+  padding: 12px;
+  border-radius: 14px;
+  background: #1b1b19; border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 8px 32px rgba(0,0,0,.7); z-index: 11;
+}
+.lb-tag-editor.on { display: block; }
+.lb-tag-editor-title { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; font-family: var(--mono); }
+.lb-tag-edit-box {
+  min-height: 38px; padding: 6px 8px;
+  border-radius: var(--r-sm); border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+}
+.lb-tag-edit-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px; border-radius: 99px;
+  background: rgba(255,255,255,.12); color: rgba(255,255,255,.82);
+  font-size: 12px; font-weight: 500;
+}
+.lb-tag-edit-rm {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--c-red) 35%, transparent);
+  background: color-mix(in srgb, var(--c-red) 12%, transparent);
+  color: var(--c-red); display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; line-height: 0; cursor: pointer;
+}
+.lb-tag-edit-input {
+  flex: 1; min-width: 110px; border: 0; outline: 0; background: transparent;
+  color: #fff; font-family: var(--font); font-size: 13px;
+}
+.lb-tag-editor-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 9px; }
+.lb-tag-editor-actions .lbtn { height: 28px; }
+.lb-tag-editor-actions .save { color: var(--c-green); border-color: color-mix(in srgb, var(--c-green) 30%, transparent); }
 
 /* URL fallback panel */
 .url-panel {
@@ -950,6 +989,17 @@ button { font-family: var(--font); cursor: pointer; }
     </div>
   </div>
 
+  <div class="lb-tag-editor" id="lbTagEditor">
+    <div class="lb-tag-editor-title">编辑标签</div>
+    <div class="lb-tag-edit-box" id="lbTagEditBox" onclick="document.getElementById('lbTagInput').focus()">
+      <input class="lb-tag-edit-input" id="lbTagInput" type="text" placeholder="输入标签，Enter 添加" onkeydown="lbTagInputKey(event)">
+    </div>
+    <div class="lb-tag-editor-actions">
+      <button class="lbtn" onclick="cancelLbTagEdit()">取消</button>
+      <button class="lbtn save" id="lbTagSaveBtn" onclick="saveLbTags()">保存标签</button>
+    </div>
+  </div>
+
   <div class="lb-bar">
     <div class="lb-tags" id="lbTags"></div>
     <div class="lb-sep" id="lbSep" style="display:none"></div>
@@ -965,6 +1015,7 @@ button { font-family: var(--font); cursor: pointer; }
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       下载原图
     </button>
+    <button class="lbtn" id="lbEditTagsBtn" onclick="openLbTagEdit()">修改标签</button>
   </div>
 </div>
 
@@ -988,6 +1039,7 @@ let files=[], chips=[];
 let imgs=[], lbIdx=0;
 let selectedIds = new Set();
 let lbW='', lbO='', lbFn='';
+let lbEditTags=[];
 let io=null, galleryRO=null, scrolledForMore=false, suppressScrollArm=false, loadSeq=0, layoutRAF=0;
 const VIRTUAL_MAX = 100;
 const VIRTUAL_BUFFER = 50;
@@ -1432,6 +1484,15 @@ function updateVirtualCards(){
     renderedCards.delete(id);
   });
 }
+function renderCardTagsHtml(img){
+  return (img.tags||[]).map(t=>
+    `<span class="card-tag-chip" onclick="event.stopPropagation();filterTag(${jsString(t)})">${esc(String(t))}</span>`
+  ).join('');
+}
+function refreshCardTags(card,img){
+  const row=card.querySelector('.card-tags-row');
+  if(row) row.innerHTML=renderCardTagsHtml(img);
+}
 function appendCard(img){
   const div = createCard(img);
   document.getElementById('gallery').appendChild(div);
@@ -1447,9 +1508,7 @@ function createCard(img){
   const src = img.is_gif ? img.orig_url : img.webp_url;
   const w = Math.max(1, Number(img.width) || 3);
   const h = Math.max(1, Number(img.height) || 4);
-  const tagsHtml = (img.tags||[]).map(t=>
-    `<span class="card-tag-chip" onclick="event.stopPropagation();filterTag(${jsString(t)})">${esc(t)}</span>`
-  ).join('');
+  const tagsHtml = renderCardTagsHtml(img);
   const webpFull = location.origin + img.webp_url;
   const origName = img.orig_url.split('/').pop();
 
@@ -1494,7 +1553,7 @@ function createCard(img){
   }, 800);
   return div;
 }
-function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function jsString(s){ return JSON.stringify(String(s)); }
 function filterTag(name){ if(!activeTags.includes(name)){ activeTags.push(name); syncTags(); document.getElementById('clearBtn').style.display=''; loadImgs(true); } }
 
@@ -1820,6 +1879,83 @@ function renderLb(){
   tg.innerHTML=(img.tags||[]).map(t=>`<span class="lb-tag">${esc(t)}</span>`).join('');
   document.getElementById('lbSep').style.display=(img.tags&&img.tags.length)?'':'none';
   ['lbCopyW','lbCopyO'].forEach(id=>document.getElementById(id).classList.remove('copied'));
+  document.getElementById('lbEditTagsBtn').style.display = pwd ? '' : 'none';
+  closeLbTagEditor();
+}
+function closeLbTagEditor(){
+  document.getElementById('lbTagEditor').classList.remove('on');
+  document.getElementById('lbEditTagsBtn').classList.remove('editing');
+}
+function openLbTagEdit(){
+  if(!pwd){ toast('请先登录后再修改标签','bad'); return; }
+  const img=imgs[lbIdx]; if(!img) return;
+  document.getElementById('urlPanel').classList.remove('on');
+  lbEditTags=[...(img.tags||[])];
+  renderLbTagEdit();
+  document.getElementById('lbTagEditor').classList.add('on');
+  document.getElementById('lbEditTagsBtn').classList.add('editing');
+  setTimeout(()=>document.getElementById('lbTagInput').focus(), 30);
+}
+function renderLbTagEdit(){
+  const box=document.getElementById('lbTagEditBox');
+  box.querySelectorAll('.lb-tag-edit-chip').forEach(el=>el.remove());
+  const input=document.getElementById('lbTagInput');
+  input.value='';
+  lbEditTags.forEach((tag,i)=>{
+    const chip=document.createElement('span');
+    chip.className='lb-tag-edit-chip';
+    chip.innerHTML=`${esc(tag)}<button class="lb-tag-edit-rm" onclick="removeLbEditTag(${i})">✕</button>`;
+    box.insertBefore(chip,input);
+  });
+}
+function addLbEditTag(raw){
+  const tag=raw.trim().replace(/,/g,'');
+  if(tag && !lbEditTags.includes(tag)) lbEditTags.push(tag);
+  renderLbTagEdit();
+}
+function removeLbEditTag(i){
+  lbEditTags.splice(i,1);
+  renderLbTagEdit();
+}
+function lbTagInputKey(e){
+  if(e.key==='Enter'||e.key===','){
+    e.preventDefault();
+    addLbEditTag(e.target.value);
+  }else if(e.key==='Backspace'&&e.target.value===''&&lbEditTags.length){
+    lbEditTags.pop();
+    renderLbTagEdit();
+  }
+}
+function cancelLbTagEdit(){ closeLbTagEditor(); }
+async function saveLbTags(){
+  if(!pwd){ toast('请先登录后再修改标签','bad'); return; }
+  const img=imgs[lbIdx]; if(!img) return;
+  const pending=document.getElementById('lbTagInput').value.trim();
+  if(pending) addLbEditTag(pending);
+
+  const btn=document.getElementById('lbTagSaveBtn');
+  const old=btn.textContent;
+  btn.disabled=true; btn.textContent='保存中…';
+  try{
+    const r=await fetch(`/api/v1/images/${img.id}/tags`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json',Authorization:`Bearer ${pwd}`},
+      body:JSON.stringify({tags:lbEditTags})
+    });
+    if(r.status===401){ setAuth(''); try{localStorage.removeItem(PWKEY);}catch(e){} toast('登录已失效','bad'); return; }
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const updated=await r.json();
+    img.tags=updated.tags||[];
+    const card=renderedCards.get(Number(img.id));
+    if(card) refreshCardTags(card,img);
+    renderLb();
+    await loadTags();
+    toast('标签已更新');
+  }catch(e){
+    toast('标签保存失败','bad');
+  }finally{
+    btn.disabled=false; btn.textContent=old;
+  }
 }
 async function lbCopy(type){
   const url=type==='webp'?lbW:lbO;

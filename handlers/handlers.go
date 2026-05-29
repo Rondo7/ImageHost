@@ -276,6 +276,40 @@ func (h *Handler) DeleteImage(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "id": id})
 }
 
+func (h *Handler) UpdateImageTags(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tags"})
+		return
+	}
+
+	tags, err := h.db.SetImageTags(id, req.Tags)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	img, err := h.db.GetImageByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	img.Tags = tags
+	c.JSON(http.StatusOK, toResp(img))
+}
+
 // ── SSE progress stream ───────────────────────────────────────────────────────
 
 func (h *Handler) ProgressStream(c *gin.Context) {

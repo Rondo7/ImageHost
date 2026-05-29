@@ -53,7 +53,7 @@ func main() {
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
 		AllowAllOrigins:  true,
-		AllowMethods:     []string{"GET", "POST", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length", "X-Image-Id", "X-Image-Tags"},
 		AllowCredentials: true,
@@ -83,10 +83,11 @@ func main() {
 	mgmt := r.Group("/api/v1")
 	mgmt.Use(authMW)
 	{
-		mgmt.POST("/images", h.APIUpload)         // upload one or more images
-		mgmt.DELETE("/images/:id", h.DeleteImage) // delete by id
-		mgmt.GET("/images", h.ListImages)         // list with pagination
-		mgmt.GET("/images/:id", h.GetImage)       // get single image info
+		mgmt.POST("/images", h.APIUpload)               // upload one or more images
+		mgmt.DELETE("/images/:id", h.DeleteImage)       // delete by id
+		mgmt.PUT("/images/:id/tags", h.UpdateImageTags) // replace image tags
+		mgmt.GET("/images", h.ListImages)               // list with pagination
+		mgmt.GET("/images/:id", h.GetImage)             // get single image info
 	}
 
 	// SSE progress

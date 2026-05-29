@@ -98,6 +98,53 @@ func (db *DB) AddTagToImage(imageID, tagID int64) error {
 	return err
 }
 
+func (db *DB) SetImageTags(imageID int64, tags []string) ([]string, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var exists int
+	if err := tx.QueryRow(`SELECT 1 FROM images WHERE id = ?`, imageID).Scan(&exists); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(`DELETE FROM image_tags WHERE image_id = ?`, imageID); err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]bool, len(tags))
+	cleaned := make([]string, 0, len(tags))
+	for _, name := range tags {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, name); err != nil {
+			return nil, err
+		}
+		var tagID int64
+		if err := tx.QueryRow(`SELECT id FROM tags WHERE name = ?`, name).Scan(&tagID); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(`INSERT INTO image_tags (image_id, tag_id) VALUES (?,?)`, imageID, tagID); err != nil {
+			return nil, err
+		}
+		cleaned = append(cleaned, name)
+	}
+
+	if _, err := tx.Exec(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM image_tags)`); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return cleaned, nil
+}
+
 func (db *DB) GetImages(tags []string, page, limit int) ([]*Image, int, error) {
 	offset := (page - 1) * limit
 	var query string
