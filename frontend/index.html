@@ -1065,6 +1065,7 @@ let imgs=[], lbIdx=0;
 let selectedIds = new Set();
 let lbW='', lbO='', lbFn='';
 let lbEditTags=[];
+let uploadLimits={max_upload_mb:50,max_upload_count:50,resize_max_pixels:4000,reject_max_pixels:10000};
 let io=null, galleryRO=null, scrolledForMore=false, suppressScrollArm=false, loadSeq=0, layoutRAF=0;
 const VIRTUAL_MAX = 100;
 const VIRTUAL_BUFFER = 50;
@@ -1126,6 +1127,7 @@ async function init(){
     if(ok) setAuth(saved); else { try{localStorage.removeItem(PWKEY);}catch(e){} setAuth(''); }
   } else { setAuth(''); }
 
+  await loadUploadLimits();
   await loadTags();
   await loadImgs(true);
   setupIO();
@@ -1791,6 +1793,12 @@ async function submitAuth(){
 }
 
 /* ────────────────────────────────── UPLOAD */
+async function loadUploadLimits(){
+  try{
+    const d=await fetch('/api/upload-limits').then(r=>r.json());
+    uploadLimits={...uploadLimits,...d};
+  }catch(e){}
+}
 function openUpload(reset=true){
   document.getElementById('upOk').style.display='none';
   document.getElementById('fileInput').value = '';
@@ -1811,12 +1819,54 @@ function clearAllPendingFiles(){
   renderFileList();
   document.getElementById('fileInput').value = '';
 }
-function onFiles(f){
+async function onFiles(f){
   if(!f || f.length === 0) return;
-  const next=Array.from(f).map(file=>({ file, previewUrl: URL.createObjectURL(file) }));
+  const checked=await validatePendingFiles(Array.from(f));
+  if(!checked.length){ document.getElementById('fileInput').value = ''; return; }
+  const next=checked.map(file=>({ file, previewUrl: URL.createObjectURL(file) }));
   files=files.concat(next);
   renderFileList();
   document.getElementById('fileInput').value = '';
+}
+async function validatePendingFiles(incoming){
+  const maxCount=Number(uploadLimits.max_upload_count)||50;
+  incoming=incoming.filter(file=>file.type.startsWith('image/'));
+  const slots=Math.max(0,maxCount-files.length);
+  if(slots<=0){ toast(`单次最多上传 ${maxCount} 张图片`,'bad'); return []; }
+
+  let droppedCount=0, droppedSize=0, droppedDimension=0, unreadable=0;
+  const accepted=[];
+  for(const file of incoming.slice(0,slots)){
+    if(isFileTooLarge(file)){ droppedSize++; continue; }
+    try{
+      const dim=await getImageDimensions(file);
+      const rejectMax=Number(uploadLimits.reject_max_pixels)||10000;
+      if(rejectMax>0 && (dim.width>rejectMax || dim.height>rejectMax)){ droppedDimension++; continue; }
+      accepted.push(file);
+    }catch(e){ unreadable++; }
+  }
+  if(incoming.length>slots) droppedCount=incoming.length-slots;
+
+  const messages=[];
+  if(droppedCount) messages.push(`超过单次 ${maxCount} 张上限，已忽略 ${droppedCount} 张`);
+  if(droppedSize) messages.push(`${droppedSize} 张图片超过 ${uploadLimits.max_upload_mb}MB`);
+  if(droppedDimension) messages.push(`${droppedDimension} 张图片宽或高超过 ${uploadLimits.reject_max_pixels}px`);
+  if(unreadable) messages.push(`${unreadable} 张图片无法读取尺寸`);
+  if(messages.length) toast(messages.join('；'),'bad');
+  return accepted;
+}
+function isFileTooLarge(file){
+  const maxMB=Number(uploadLimits.max_upload_mb)||50;
+  return file.size > maxMB*1024*1024;
+}
+function getImageDimensions(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{ URL.revokeObjectURL(url); resolve({width:img.naturalWidth,height:img.naturalHeight}); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('invalid image')); };
+    img.src=url;
+  });
 }
 function renderFileList(){
   const list=document.getElementById('flist'); list.innerHTML='';
@@ -1865,6 +1915,10 @@ function renderChips(){
 }
 async function doUpload(){
   if(!files.length){ toast('请先选择图片','bad'); return; }
+  if(files.length > (Number(uploadLimits.max_upload_count)||50)){
+    toast(`单次最多上传 ${uploadLimits.max_upload_count} 张图片`,'bad');
+    return;
+  }
   const tv=document.getElementById('tagTxt').value.trim();
   if(tv){ if(!chips.includes(tv)) chips.push(tv); document.getElementById('tagTxt').value=''; renderChips(); }
   const btn=document.getElementById('doUpBtn'); btn.disabled=true; btn.textContent='上传中…';
@@ -1873,9 +1927,13 @@ async function doUpload(){
   files.forEach(item=>fd.append('files',item.file)); fd.append('tags',chips.join(',')); fd.append('progress_id',pid);
   files.forEach((_,i)=>watchProg(`${pid}_${i}`,i));
   try{
-    const r=await fetch('/api/upload',{method:'POST',headers:{Authorization:`Bearer ${pwd}`},body:fd});
-    if(r.status===401){ setAuth(''); try{localStorage.removeItem(PWKEY);}catch(e){} toast('密码已失效','bad'); closeUpload(); return; }
-    const d=await r.json(); const res=d.results||[]; let ok=0;
+    const d=await uploadWithProgress('/api/upload',fd,percent=>{
+      files.forEach((_,i)=>{
+        const s=document.getElementById(`fs${i}`);
+        if(s && !s.classList.contains('ok') && !s.classList.contains('er')) s.textContent=`上传中 ${percent}%`;
+      });
+    });
+    const res=d.results||[]; let ok=0;
     res.forEach((re,i)=>{
       const s=document.getElementById(`fs${i}`);
       if(re.success){ok++;if(s){s.textContent='✓';s.className='fitem-st ok';}}
@@ -1886,10 +1944,40 @@ async function doUpload(){
     toast(`上传完成 ${ok}/${res.length}`);
     await loadTags(); await loadImgs(true);
     setTimeout(closeUpload,1600);
-  }catch(e){ toast('上传出错','bad'); }
+  }catch(e){ if(e.message!=='unauthorized') toast(e.message||'上传出错','bad'); }
   btn.disabled=false;
   document.querySelectorAll('.fitem-rm').forEach(b=>b.disabled=false);
   btn.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 开始上传';
+}
+function uploadWithProgress(url,formData,onProgress){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',url);
+    xhr.setRequestHeader('Authorization',`Bearer ${pwd}`);
+    xhr.upload.onprogress=e=>{
+      if(!e.lengthComputable) return;
+      onProgress(Math.min(99,Math.round((e.loaded/e.total)*100)));
+    };
+    xhr.onload=()=>{
+      if(xhr.status===401){
+        setAuth('');
+        try{localStorage.removeItem(PWKEY);}catch(e){}
+        toast('密码已失效','bad');
+        closeUpload();
+        reject(new Error('unauthorized'));
+        return;
+      }
+      let data={};
+      try{ data=JSON.parse(xhr.responseText||'{}'); }catch(e){}
+      if(xhr.status<200||xhr.status>=300){
+        reject(new Error(data.error||`HTTP ${xhr.status}`));
+        return;
+      }
+      resolve(data);
+    };
+    xhr.onerror=()=>reject(new Error('network error'));
+    xhr.send(formData);
+  });
 }
 function watchProg(key,idx){
   const es=new EventSource(`/api/progress/${key}`);
@@ -1898,6 +1986,7 @@ function watchProg(key,idx){
     try{
       const m=JSON.parse(e.data); const s=document.getElementById(`fs${idx}`);
       if(s){
+        if(m.stage==='waiting') return;
         if(m.stage==='done'||m.stage==='complete'){s.textContent='✓';s.className='fitem-st ok';}
         else{s.textContent=`${stages[m.stage]||m.stage} ${m.progress||0}%`;}
       }

@@ -103,6 +103,16 @@ func (h *Handler) ListTags(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"tags": tags})
 }
 
+func UploadLimits(c *gin.Context) {
+	cfg := config.Get()
+	c.JSON(http.StatusOK, gin.H{
+		"max_upload_mb":     cfg.MaxUploadMB,
+		"max_upload_count":  cfg.MaxUploadCount,
+		"resize_max_pixels": cfg.ResizeMaxPixels,
+		"reject_max_pixels": cfg.RejectMaxPixels,
+	})
+}
+
 // ── Public: random image ──────────────────────────────────────────────────────
 //
 // Default behaviour: serve the image file directly (no caching).

@@ -72,6 +72,7 @@ func main() {
 	r.GET("/api/random", randomRL, h.RandomImage)
 	r.GET("/api/images", h.ListImages)
 	r.GET("/api/tags", h.ListTags)
+	r.GET("/api/upload-limits", handlers.UploadLimits)
 
 	// ── Auth-required API ─────────────────────────────────────────────────
 	authMW := handlers.AuthMiddleware()
