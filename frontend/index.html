@@ -99,24 +99,45 @@ button { font-family: var(--font); cursor: pointer; }
   flex: 1; display: flex; justify-content: center;
 }
 .search-box {
-  position: relative; width: 100%; max-width: 300px;
+  position: relative; width: 100%; max-width: 360px;
+  min-height: 32px;
+  background: var(--c-surface2);
+  border: 1px solid var(--c-border);
+  border-radius: 99px;
+  padding: 3px 10px 3px 30px;
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  transition: border-color .15s, background .15s;
 }
+.search-box:focus-within { border-color: var(--c-border2); background: var(--c-surface); }
 .search-box svg {
   position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
   width: 13px; height: 13px; color: var(--c-text3); pointer-events: none;
 }
+.search-tags { display: contents; }
+.search-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 22px; padding: 0 4px 0 8px; border-radius: 99px;
+  background: var(--c-tag-act); color: var(--c-tag-afg);
+  font-size: 12px; font-weight: 500; max-width: 120px;
+}
+.search-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-chip-x {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--c-red) 35%, transparent);
+  background: color-mix(in srgb, var(--c-red) 12%, transparent);
+  color: var(--c-red); cursor: pointer; font-size: 10px; line-height: 0;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.search-chip-x:hover { background: color-mix(in srgb, var(--c-red) 22%, transparent); }
 .search-input {
-  width: 100%; height: 32px;
-  background: var(--c-surface2);
-  border: 1px solid var(--c-border);
-  border-radius: 99px;
-  padding: 0 12px 0 30px;
+  flex: 1; min-width: 90px; height: 24px;
+  background: transparent;
+  border: 0;
+  padding: 0;
   font-family: var(--font); font-size: 13px;
   color: var(--c-text); outline: none;
-  transition: border-color .15s, background .15s;
 }
 .search-input::placeholder { color: var(--c-text3); }
-.search-input:focus { border-color: var(--c-border2); background: var(--c-surface); }
 .header-right {
   display: flex; align-items: center; gap: 6px; flex-shrink: 0;
 }
@@ -813,12 +834,13 @@ button { font-family: var(--font); cursor: pointer; }
     ImageHost
   </div>
   <div class="header-search">
-    <div class="search-box">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-      </svg>
-      <input class="search-input" id="searchInput" type="text" placeholder="搜索标签…">
-    </div>
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <div class="search-tags" id="searchTags"></div>
+        <input class="search-input" id="searchInput" type="text" placeholder="输入标签后回车…">
+      </div>
   </div>
   <div class="header-right">
     <!-- login state pill -->
@@ -1015,7 +1037,10 @@ button { font-family: var(--font); cursor: pointer; }
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       下载原图
     </button>
-    <button class="lbtn" id="lbEditTagsBtn" onclick="openLbTagEdit()">修改标签</button>
+    <button class="lbtn" id="lbEditTagsBtn" onclick="openLbTagEdit()">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      修改标签
+    </button>
   </div>
 </div>
 
@@ -1111,9 +1136,7 @@ async function init(){
     galleryRO = new ResizeObserver(()=>scheduleGalleryLayout());
     galleryRO.observe(document.getElementById('gallery'));
   }
-  document.getElementById('searchInput').addEventListener('input', debounce(e=>{
-    q = e.target.value.trim(); loadImgs(true);
-  }, 320));
+  document.getElementById('searchInput').addEventListener('keydown', onSearchKey);
   document.getElementById('fileInput').addEventListener('change', e => onFiles(e.target.files));
   document.getElementById('lb').addEventListener('click', e=>{
     const p = document.getElementById('urlPanel');
@@ -1202,6 +1225,43 @@ function syncTags(){
     if(t==='全部') el.classList.toggle('on', activeTags.length===0);
     else el.classList.toggle('on', activeTags.includes(t));
   });
+  renderSearchTags();
+}
+function renderSearchTags(){
+  const box=document.getElementById('searchTags');
+  if(!box) return;
+  box.innerHTML=activeTags.map((tag,i)=>
+    `<span class="search-chip"><span class="search-chip-name">${esc(tag)}</span><button class="search-chip-x" onclick="removeSearchTag(${i})">✕</button></span>`
+  ).join('');
+  const input=document.getElementById('searchInput');
+  if(input) input.placeholder = activeTags.length ? '继续添加标签…' : '输入标签后回车…';
+}
+function addSearchTag(raw){
+  const tag=raw.trim().replace(/,/g,'');
+  if(!tag) return;
+  q='';
+  if(!activeTags.includes(tag)) activeTags.push(tag);
+  document.getElementById('clearBtn').style.display = activeTags.length?'':'none';
+  syncTags();
+  loadImgs(true);
+}
+function removeSearchTag(i){
+  activeTags.splice(i,1);
+  document.getElementById('clearBtn').style.display = activeTags.length?'':'none';
+  syncTags();
+  loadImgs(true);
+}
+function onSearchKey(e){
+  if(e.key==='Enter'||e.key===','){
+    e.preventDefault();
+    addSearchTag(e.target.value);
+    e.target.value='';
+  }else if(e.key==='Backspace'&&e.target.value===''&&activeTags.length){
+    activeTags.pop();
+    document.getElementById('clearBtn').style.display = activeTags.length?'':'none';
+    syncTags();
+    loadImgs(true);
+  }
 }
 function toggleTag(name){
   activeTags.includes(name) ? (activeTags=activeTags.filter(x=>x!==name)) : activeTags.push(name);

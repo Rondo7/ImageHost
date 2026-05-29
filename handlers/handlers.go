@@ -182,6 +182,7 @@ func (h *Handler) RandomImage(c *gin.Context) {
 // ── Auth-required: upload (frontend form) ────────────────────────────────────
 
 func (h *Handler) Upload(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadRequestBytes())
 	form, err := c.MultipartForm()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid form"})
@@ -190,6 +191,10 @@ func (h *Handler) Upload(c *gin.Context) {
 	files := form.File["files"]
 	if len(files) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no files"})
+		return
+	}
+	if err := validateUploadBatch(files); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -222,6 +227,7 @@ func (h *Handler) Upload(c *gin.Context) {
 // ── Auth-required: API upload (JSON body or multipart) ────────────────────────
 
 func (h *Handler) APIUpload(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadRequestBytes())
 	// tags from query or form
 	tagsRaw := c.Query("tags")
 	if tagsRaw == "" {
@@ -241,6 +247,10 @@ func (h *Handler) APIUpload(c *gin.Context) {
 	}
 	if len(files) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no files provided (use field name 'files' or 'file')"})
+		return
+	}
+	if err := validateUploadBatch(files); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -420,6 +430,33 @@ func parsePage(c *gin.Context) (int, int) {
 		limit = 50
 	}
 	return page, limit
+}
+
+func validateUploadBatch(files []*multipart.FileHeader) error {
+	cfg := config.Get()
+	if cfg.MaxUploadCount > 0 && len(files) > cfg.MaxUploadCount {
+		return fmt.Errorf("too many files: max %d per upload", cfg.MaxUploadCount)
+	}
+	maxBytes := cfg.MaxUploadMB * 1024 * 1024
+	for _, fh := range files {
+		if maxBytes > 0 && fh.Size > maxBytes {
+			return fmt.Errorf("file %s exceeds %dMB limit", fh.Filename, cfg.MaxUploadMB)
+		}
+	}
+	return nil
+}
+
+func maxUploadRequestBytes() int64 {
+	cfg := config.Get()
+	maxMB := cfg.MaxUploadMB
+	if maxMB <= 0 {
+		maxMB = 50
+	}
+	maxCount := cfg.MaxUploadCount
+	if maxCount <= 0 {
+		maxCount = 50
+	}
+	return maxMB*1024*1024*int64(maxCount) + 10*1024*1024
 }
 
 func (h *Handler) processFile(fh *multipart.FileHeader, tags []string, progressCh chan string, idx, total int) UploadResult {

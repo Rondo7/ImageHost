@@ -15,6 +15,10 @@ type Config struct {
 	Port            string `json:"port"`
 	RandomRateLimit int    `json:"random_rate_limit"` // max requests per IP per minute (0=disabled)
 	AuthMaxAttempts int    `json:"auth_max_attempts"` // max failed auth per IP per minute (0=disabled)
+	MaxUploadMB     int64  `json:"max_upload_mb"`     // max size per image in MB
+	MaxUploadCount  int    `json:"max_upload_count"`  // max images per upload request
+	ResizeMaxPixels int    `json:"resize_max_pixels"` // resize WebP when width or height exceeds this (0=disabled)
+	RejectMaxPixels int    `json:"reject_max_pixels"` // reject image when width or height exceeds this (0=disabled)
 }
 
 var (
@@ -31,6 +35,10 @@ func defaults() *Config {
 		Port:            "8080",
 		RandomRateLimit: 100,
 		AuthMaxAttempts: 10,
+		MaxUploadMB:     50,
+		MaxUploadCount:  50,
+		ResizeMaxPixels: 4000,
+		RejectMaxPixels: 10000,
 	}
 }
 
@@ -83,13 +91,25 @@ func Load(dataDir string) *Config {
 	if cfg.AuthMaxAttempts < 0 {
 		cfg.AuthMaxAttempts = 0
 	}
+	if cfg.MaxUploadMB <= 0 {
+		cfg.MaxUploadMB = 50
+	}
+	if cfg.MaxUploadCount <= 0 {
+		cfg.MaxUploadCount = 50
+	}
+	if cfg.ResizeMaxPixels < 0 {
+		cfg.ResizeMaxPixels = 0
+	}
+	if cfg.RejectMaxPixels < 0 {
+		cfg.RejectMaxPixels = 0
+	}
 
 	mu.Lock()
 	current = cfg
 	mu.Unlock()
 
-	log.Printf("config: loaded (port=%s, storage=%s, random_limit=%d/min, auth_max=%d/min)",
-		cfg.Port, cfg.StorageDir, cfg.RandomRateLimit, cfg.AuthMaxAttempts)
+	log.Printf("config: loaded (port=%s, storage=%s, random_limit=%d/min, auth_max=%d/min, max_upload=%dMB, max_count=%d, resize_max=%dpx, reject_max=%dpx)",
+		cfg.Port, cfg.StorageDir, cfg.RandomRateLimit, cfg.AuthMaxAttempts, cfg.MaxUploadMB, cfg.MaxUploadCount, cfg.ResizeMaxPixels, cfg.RejectMaxPixels)
 	return cfg
 }
 

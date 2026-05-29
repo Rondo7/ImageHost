@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	_ "image/gif"
 	"image/jpeg"
 	"image/png"
@@ -17,7 +18,9 @@ import (
 )
 
 type Storage struct {
-	BaseDir string
+	BaseDir         string
+	ResizeMaxPixels int
+	RejectMaxPixels int
 }
 
 type SaveResult struct {
@@ -32,6 +35,11 @@ type SaveResult struct {
 
 func New(baseDir string) *Storage {
 	return &Storage{BaseDir: baseDir}
+}
+
+func (s *Storage) SetLimits(resizeMaxPixels, rejectMaxPixels int) {
+	s.ResizeMaxPixels = resizeMaxPixels
+	s.RejectMaxPixels = rejectMaxPixels
 }
 
 func (s *Storage) Save(src io.Reader, originalName string, progressCh chan<- string) (*SaveResult, error) {
@@ -57,6 +65,16 @@ func (s *Storage) Save(src io.Reader, originalName string, progressCh chan<- str
 	}
 
 	if ext == ".gif" {
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("decode gif dimensions: %w", err)
+		}
+		result.Width = cfg.Width
+		result.Height = cfg.Height
+		if err := s.checkDimensions(result.Width, result.Height); err != nil {
+			return nil, err
+		}
+
 		result.IsGif = true
 		gifPath := filepath.Join(s.BaseDir, "gif", baseName+".gif")
 		if err := os.WriteFile(gifPath, data, 0644); err != nil {
@@ -84,14 +102,21 @@ func (s *Storage) Save(src io.Reader, originalName string, progressCh chan<- str
 	sendProgress(`{"stage":"decoding","progress":40}`)
 	img, err := decodeImage(data, ext)
 	if err != nil {
-		result.WebpPath = origPath
-		sendProgress(`{"stage":"done","progress":100}`)
-		return result, nil
+		os.Remove(origPath)
+		return nil, fmt.Errorf("decode image: %w", err)
 	}
 
 	bounds := img.Bounds()
-	result.Width = bounds.Max.X
-	result.Height = bounds.Max.Y
+	result.Width = bounds.Dx()
+	result.Height = bounds.Dy()
+	if err := s.checkDimensions(result.Width, result.Height); err != nil {
+		os.Remove(origPath)
+		return nil, err
+	}
+	encodeImg := img
+	if s.ResizeMaxPixels > 0 && (result.Width > s.ResizeMaxPixels || result.Height > s.ResizeMaxPixels) {
+		encodeImg = resizeImage(img, s.ResizeMaxPixels)
+	}
 
 	sendProgress(`{"stage":"converting","progress":60}`)
 	webpPath := filepath.Join(s.BaseDir, "webp", baseName+".webp")
@@ -100,7 +125,7 @@ func (s *Storage) Save(src io.Reader, originalName string, progressCh chan<- str
 		result.WebpPath = origPath
 	} else {
 		opts := &webp.Options{Lossless: false, Quality: 82}
-		if encErr := webp.Encode(wf, img, opts); encErr != nil {
+		if encErr := webp.Encode(wf, encodeImg, opts); encErr != nil {
 			wf.Close()
 			os.Remove(webpPath)
 			result.WebpPath = origPath
@@ -114,6 +139,51 @@ func (s *Storage) Save(src io.Reader, originalName string, progressCh chan<- str
 	return result, nil
 }
 
+func (s *Storage) checkDimensions(width, height int) error {
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("invalid image dimensions")
+	}
+	if s.RejectMaxPixels > 0 && (width > s.RejectMaxPixels || height > s.RejectMaxPixels) {
+		return fmt.Errorf("image dimensions exceed %dpx limit", s.RejectMaxPixels)
+	}
+	return nil
+}
+
+func resizeImage(src image.Image, maxPixels int) image.Image {
+	bounds := src.Bounds()
+	sw := bounds.Dx()
+	sh := bounds.Dy()
+	if maxPixels <= 0 || (sw <= maxPixels && sh <= maxPixels) {
+		return src
+	}
+
+	dw, dh := scaledSize(sw, sh, maxPixels)
+	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
+	for y := 0; y < dh; y++ {
+		sy := bounds.Min.Y + y*sh/dh
+		for x := 0; x < dw; x++ {
+			sx := bounds.Min.X + x*sw/dw
+			dst.Set(x, y, color.RGBAModel.Convert(src.At(sx, sy)))
+		}
+	}
+	return dst
+}
+
+func scaledSize(width, height, maxPixels int) (int, int) {
+	if width >= height {
+		newHeight := height * maxPixels / width
+		if newHeight < 1 {
+			newHeight = 1
+		}
+		return maxPixels, newHeight
+	}
+	newWidth := width * maxPixels / height
+	if newWidth < 1 {
+		newWidth = 1
+	}
+	return newWidth, maxPixels
+}
+
 func decodeImage(data []byte, ext string) (image.Image, error) {
 	r := bytes.NewReader(data)
 	switch ext {
@@ -121,6 +191,8 @@ func decodeImage(data []byte, ext string) (image.Image, error) {
 		return jpeg.Decode(r)
 	case ".png":
 		return png.Decode(r)
+	case ".webp":
+		return webp.Decode(r)
 	default:
 		img, _, err := image.Decode(bytes.NewReader(data))
 		return img, err

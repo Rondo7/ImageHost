@@ -136,7 +136,11 @@ UPLOAD_PASSWORD=请改成强密码 PORT=8080 go run .
   "data_dir":         "data",
   "port":             "8080",
   "random_rate_limit": 100,
-  "auth_max_attempts": 10
+  "auth_max_attempts": 10,
+  "max_upload_mb": 50,
+  "max_upload_count": 50,
+  "resize_max_pixels": 4000,
+  "reject_max_pixels": 10000
 }
 ```
 
@@ -148,6 +152,10 @@ UPLOAD_PASSWORD=请改成强密码 PORT=8080 go run .
 | `port` | `8080` | HTTP 服务器监听的 TCP 端口 |
 | `random_rate_limit` | `100` | 每个 IP 每分钟访问 `/api/random` 的最大请求数（`0` = 禁用） |
 | `auth_max_attempts` | `10` | 每个 IP 每分钟允许的最大认证失败次数，超过后进入静默冷却 |
+| `max_upload_mb` | `50` | 单张图片最大上传大小（MB） |
+| `max_upload_count` | `50` | 单次请求最多上传图片数量 |
+| `resize_max_pixels` | `4000` | 转换 WebP 时，如宽或高超过该值则按原比例缩小（`0` = 禁用缩放） |
+| `reject_max_pixels` | `10000` | 如宽或高超过该值则拒绝上传（`0` = 禁用分辨率拒绝） |
 
 **环境变量覆盖**（优先级高于配置文件）：
 

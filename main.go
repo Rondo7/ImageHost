@@ -45,6 +45,7 @@ func main() {
 
 	// ── Init storage ──────────────────────────────────────────────────────
 	store := storage.New(cfg.StorageDir)
+	store.SetLimits(cfg.ResizeMaxPixels, cfg.RejectMaxPixels)
 
 	// ── Init handlers ─────────────────────────────────────────────────────
 	h := handlers.New(db, store)
