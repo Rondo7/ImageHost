@@ -541,7 +541,7 @@ button { font-family: var(--font); cursor: pointer; }
 .check-row input[type=checkbox] { width: 14px; height: 14px; accent-color: var(--c-ink); cursor: pointer; }
 
 /* upload sheet */
-.upload-sheet { max-width: 500px; }
+.upload-sheet { max-width: 500px; overflow: visible; }
 .drop {
   border: 1.5px dashed var(--c-border2); border-radius: var(--r);
   padding: 28px 20px; text-align: center; cursor: pointer;
@@ -593,6 +593,7 @@ button { font-family: var(--font); cursor: pointer; }
 .btn-clear-files:hover { background: color-mix(in srgb, var(--c-red) 18%, transparent); }
 
 /* tags input */
+.tag-input-wrap { position: relative; }
 .tags-box {
   background: var(--c-surface2); border: 1px solid var(--c-border);
   border-radius: var(--r-sm); padding: 6px 8px;
@@ -600,6 +601,23 @@ button { font-family: var(--font); cursor: pointer; }
   cursor: text; min-height: 38px; transition: border-color .15s;
 }
 .tags-box:focus-within { border-color: var(--c-border2); }
+.tag-suggest {
+  display: none; position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+  z-index: 80; max-height: min(260px, 42vh); overflow-y: auto; padding: 5px;
+  border: 1px solid var(--c-border2); border-radius: var(--r-sm);
+  background: var(--c-surface); box-shadow: var(--sh-md);
+}
+.tag-suggest.on { display: block; }
+.tag-suggest-item {
+  width: 100%; height: 30px; padding: 0 9px; border: 0; border-radius: var(--r-xs);
+  background: transparent; color: var(--c-text2); font: inherit; font-size: 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  cursor: pointer; text-align: left;
+}
+.tag-suggest-item:hover, .tag-suggest-item.active { background: var(--c-surface2); color: var(--c-text); }
+.tag-suggest-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-suggest-count { font-family: var(--mono); font-size: 10px; color: var(--c-text3); flex-shrink: 0; }
+.tag-suggest-empty { padding: 7px 9px; font-size: 12px; color: var(--c-text3); }
 .tchip {
   display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px;
   background: var(--c-surface3); border: 1px solid var(--c-border2);
@@ -709,22 +727,31 @@ button { font-family: var(--font); cursor: pointer; }
 .lbtn.editing { background: rgba(255,255,255,.16); color: #fff; }
 
 .lb-tag-editor {
-  display: none; position: absolute; bottom: 60px;
-  left: 50%; transform: translateX(-50%);
+  display: none; position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
   width: min(94vw, 440px);
   padding: 12px;
   border-radius: 14px;
   background: #1b1b19; border: 1px solid rgba(255,255,255,.12);
-  box-shadow: 0 8px 32px rgba(0,0,0,.7); z-index: 11;
+  box-shadow: 0 8px 32px rgba(0,0,0,.7); z-index: 20;
 }
 .lb-tag-editor.on { display: block; }
 .lb-tag-editor-title { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; font-family: var(--mono); }
+.lb-tag-input-wrap { position: relative; }
 .lb-tag-edit-box {
   min-height: 38px; padding: 6px 8px;
   border-radius: var(--r-sm); border: 1px solid rgba(255,255,255,.12);
   background: rgba(255,255,255,.06);
   display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
 }
+.lb-tag-suggest {
+  max-height: min(260px, 34vh);
+  background: #22221f; border-color: rgba(255,255,255,.14);
+  box-shadow: 0 8px 24px rgba(0,0,0,.55);
+}
+.lb-tag-suggest .tag-suggest-item { color: rgba(255,255,255,.68); }
+.lb-tag-suggest .tag-suggest-item:hover,
+.lb-tag-suggest .tag-suggest-item.active { background: rgba(255,255,255,.08); color: #fff; }
 .lb-tag-edit-chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 7px; border-radius: 99px;
@@ -966,9 +993,7 @@ button { font-family: var(--font); cursor: pointer; }
           标签
           <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--c-text3);letter-spacing:0"> — Enter 或逗号添加</span>
         </label>
-        <div class="tags-box" id="tagsBox" onclick="document.getElementById('tagTxt').focus()">
-          <input type="text" id="tagTxt" class="ttxt" placeholder="添加标签…" onkeydown="onTagKey(event)">
-        </div>
+        <div class="tag-input-wrap"><div class="tags-box" id="tagsBox" onclick="document.getElementById('tagTxt').focus()"><input type="text" id="tagTxt" class="ttxt" placeholder="添加标签…" onkeydown="onTagKey(event)" oninput="renderTagSuggestions('upload')" onfocus="openTagSuggestions('upload')"></div><div class="tag-suggest" id="uploadTagSuggest"></div></div>
       </div>
       <div class="flist-head" id="flistHead">
         <span class="flist-title" id="flistTitle">待上传 0 张</span>
@@ -1013,9 +1038,7 @@ button { font-family: var(--font); cursor: pointer; }
 
   <div class="lb-tag-editor" id="lbTagEditor">
     <div class="lb-tag-editor-title">编辑标签</div>
-    <div class="lb-tag-edit-box" id="lbTagEditBox" onclick="document.getElementById('lbTagInput').focus()">
-      <input class="lb-tag-edit-input" id="lbTagInput" type="text" placeholder="输入标签，Enter 添加" onkeydown="lbTagInputKey(event)">
-    </div>
+    <div class="lb-tag-input-wrap"><div class="lb-tag-edit-box" id="lbTagEditBox" onclick="document.getElementById('lbTagInput').focus()"><input class="lb-tag-edit-input" id="lbTagInput" type="text" placeholder="输入标签，Enter 添加" onkeydown="lbTagInputKey(event)" oninput="renderTagSuggestions('lightbox')" onfocus="openTagSuggestions('lightbox')"></div><div class="tag-suggest lb-tag-suggest" id="lbTagSuggest"></div></div>
     <div class="lb-tag-editor-actions">
       <button class="lbtn" onclick="cancelLbTagEdit()">取消</button>
       <button class="lbtn save" id="lbTagSaveBtn" onclick="saveLbTags()">保存标签</button>
@@ -1059,6 +1082,7 @@ button { font-family: var(--font); cursor: pointer; }
 const PWKEY = 'ih_pwd';
 let page=1, PG=20, total=0, loading=false, done=false;
 let activeTags=[], q='';
+let allTags=[];
 let pwd='';
 let files=[], chips=[];
 let imgs=[], lbIdx=0;
@@ -1140,6 +1164,10 @@ async function init(){
   }
   document.getElementById('searchInput').addEventListener('keydown', onSearchKey);
   document.getElementById('fileInput').addEventListener('change', e => onFiles(e.target.files));
+  document.addEventListener('click', e=>{
+    if(!e.target.closest('.tag-input-wrap')) closeTagSuggestions('upload');
+    if(!e.target.closest('.lb-tag-input-wrap')) closeTagSuggestions('lightbox');
+  });
   document.getElementById('lb').addEventListener('click', e=>{
     const p = document.getElementById('urlPanel');
     if(!p.contains(e.target) && !e.target.closest('.lbtn')) p.classList.remove('on');
@@ -1201,7 +1229,10 @@ function setupPageImageDrop(){
 async function loadTags(){
   try{
     const d = await fetch('/api/tags').then(r=>r.json());
-    renderTags(d.tags||[]);
+    allTags = d.tags||[];
+    renderTags(allTags);
+    renderTagSuggestions('upload');
+    renderTagSuggestions('lightbox');
   }catch(e){}
 }
 function renderTags(tags){
@@ -1214,6 +1245,108 @@ function renderTags(tags){
     el.onclick = ()=>toggleTag(t.name);
     c.appendChild(el);
   });
+}
+function tagSuggestConfig(ctx){
+  if(ctx==='lightbox'){
+    return {
+      input: document.getElementById('lbTagInput'),
+      menu: document.getElementById('lbTagSuggest'),
+      selected: ()=>lbEditTags,
+      add: addLbEditTag,
+    };
+  }
+  return {
+    input: document.getElementById('tagTxt'),
+    menu: document.getElementById('uploadTagSuggest'),
+    selected: ()=>chips,
+    add: addUploadTag,
+  };
+}
+function normalizeTag(raw){ return String(raw||'').trim().replace(/,/g,''); }
+function suggestedTags(ctx){
+  const cfg=tagSuggestConfig(ctx);
+  if(!cfg.input) return [];
+  const q=cfg.input.value.trim().toLowerCase();
+  const selected=new Set(cfg.selected().map(t=>String(t).toLowerCase()));
+  return allTags
+    .filter(t=>t && t.name && !selected.has(String(t.name).toLowerCase()))
+    .filter(t=>!q || String(t.name).toLowerCase().includes(q))
+    .slice(0, 12);
+}
+function openTagSuggestions(ctx){
+  renderTagSuggestions(ctx);
+  const cfg=tagSuggestConfig(ctx);
+  if(cfg.menu && cfg.menu.children.length) cfg.menu.classList.add('on');
+}
+function closeTagSuggestions(ctx){
+  const cfg=tagSuggestConfig(ctx);
+  if(cfg.menu) cfg.menu.classList.remove('on');
+}
+function renderTagSuggestions(ctx){
+  const cfg=tagSuggestConfig(ctx);
+  if(!cfg.menu || !cfg.input) return;
+  const tags=suggestedTags(ctx);
+  cfg.menu.innerHTML = '';
+  if(!tags.length){
+    const empty=document.createElement('div');
+    empty.className='tag-suggest-empty';
+    empty.textContent = allTags.length ? '没有匹配标签' : '暂无已有标签';
+    cfg.menu.appendChild(empty);
+  }else{
+    tags.forEach((t,i)=>{
+      const btn=document.createElement('button');
+      btn.type='button';
+      btn.className='tag-suggest-item'+(i===0?' active':'');
+      btn.addEventListener('pointerdown', e=>{
+        e.preventDefault();
+        e.stopPropagation();
+        chooseSuggestedTag(ctx, t.name);
+      });
+      const name=document.createElement('span');
+      name.className='tag-suggest-name';
+      name.textContent=t.name;
+      const count=document.createElement('span');
+      count.className='tag-suggest-count';
+      count.textContent=t.count||0;
+      btn.appendChild(name);
+      btn.appendChild(count);
+      cfg.menu.appendChild(btn);
+    });
+  }
+  cfg.menu.classList.toggle('on', document.activeElement===cfg.input);
+}
+function chooseSuggestedTag(ctx,name){
+  const cfg=tagSuggestConfig(ctx);
+  cfg.add(name);
+  if(cfg.input){ cfg.input.value=''; cfg.input.focus(); }
+  renderTagSuggestions(ctx);
+}
+function firstSuggestedTagName(ctx){
+  const tags=suggestedTags(ctx);
+  return tags.length ? tags[0].name : '';
+}
+function addUploadTag(raw){
+  const tag=normalizeTag(raw);
+  if(tag && !chips.includes(tag)) chips.push(tag);
+  renderChips();
+  renderTagSuggestions('upload');
+}
+function handleTagInputKey(e,ctx){
+  const cfg=tagSuggestConfig(ctx);
+  if(e.key==='Enter'||e.key===','){
+    e.preventDefault();
+    const typed=normalizeTag(e.target.value);
+    const tag=typed || firstSuggestedTagName(ctx);
+    if(tag) cfg.add(tag);
+    e.target.value='';
+    renderTagSuggestions(ctx);
+    return;
+  }
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+    e.preventDefault();
+    const tag=firstSuggestedTagName(ctx);
+    if(tag){ e.target.value=tag; renderTagSuggestions(ctx); }
+  }
 }
 function mktag(name,count,on){
   const el = document.createElement('div');
@@ -1807,9 +1940,10 @@ function openUpload(reset=true){
     clearPendingFiles(); chips=[]; renderChips();
   }
   renderFileList();
+  renderTagSuggestions('upload');
   document.getElementById('uploadBackdrop').classList.add('open');
 }
-function closeUpload(){ document.getElementById('uploadBackdrop').classList.remove('open'); }
+function closeUpload(){ document.getElementById('uploadBackdrop').classList.remove('open'); closeTagSuggestions('upload'); }
 function clearPendingFiles(){
   files.forEach(f=>{ if(f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
   files=[];
@@ -1898,12 +2032,10 @@ function removePendingFile(i){
 }
 function fmtSz(b){ return b<1048576 ? (b/1024).toFixed(1)+'KB' : (b/1048576).toFixed(1)+'MB'; }
 function onTagKey(e){
-  if(e.key==='Enter'||e.key===','){
-    e.preventDefault(); const v=e.target.value.trim().replace(/,/g,'');
-    if(v&&!chips.includes(v)) chips.push(v); e.target.value=''; renderChips();
-  } else if(e.key==='Backspace'&&e.target.value===''&&chips.length){ chips.pop(); renderChips(); }
+  handleTagInputKey(e,'upload');
+  if(e.key==='Backspace'&&e.target.value===''&&chips.length){ chips.pop(); renderChips(); renderTagSuggestions('upload'); }
 }
-function rmChip(i){ chips.splice(i,1); renderChips(); }
+function rmChip(i){ chips.splice(i,1); renderChips(); renderTagSuggestions('upload'); }
 function renderChips(){
   const box=document.getElementById('tagsBox'); box.querySelectorAll('.tchip').forEach(c=>c.remove());
   const inp=document.getElementById('tagTxt');
@@ -1920,7 +2052,7 @@ async function doUpload(){
     return;
   }
   const tv=document.getElementById('tagTxt').value.trim();
-  if(tv){ if(!chips.includes(tv)) chips.push(tv); document.getElementById('tagTxt').value=''; renderChips(); }
+  if(tv){ addUploadTag(tv); document.getElementById('tagTxt').value=''; }
   const btn=document.getElementById('doUpBtn'); btn.disabled=true; btn.textContent='上传中…';
   document.querySelectorAll('.fitem-rm').forEach(b=>b.disabled=true);
   const pid=`up_${Date.now()}`; const fd=new FormData();
@@ -2043,7 +2175,7 @@ function openLbTagEdit(){
   renderLbTagEdit();
   document.getElementById('lbTagEditor').classList.add('on');
   document.getElementById('lbEditTagsBtn').classList.add('editing');
-  setTimeout(()=>document.getElementById('lbTagInput').focus(), 30);
+  setTimeout(()=>{ document.getElementById('lbTagInput').focus(); openTagSuggestions('lightbox'); }, 30);
 }
 function renderLbTagEdit(){
   const box=document.getElementById('lbTagEditBox');
@@ -2058,21 +2190,22 @@ function renderLbTagEdit(){
   });
 }
 function addLbEditTag(raw){
-  const tag=raw.trim().replace(/,/g,'');
+  const tag=normalizeTag(raw);
   if(tag && !lbEditTags.includes(tag)) lbEditTags.push(tag);
   renderLbTagEdit();
+  renderTagSuggestions('lightbox');
 }
 function removeLbEditTag(i){
   lbEditTags.splice(i,1);
   renderLbTagEdit();
+  renderTagSuggestions('lightbox');
 }
 function lbTagInputKey(e){
-  if(e.key==='Enter'||e.key===','){
-    e.preventDefault();
-    addLbEditTag(e.target.value);
-  }else if(e.key==='Backspace'&&e.target.value===''&&lbEditTags.length){
+  handleTagInputKey(e,'lightbox');
+  if(e.key==='Backspace'&&e.target.value===''&&lbEditTags.length){
     lbEditTags.pop();
     renderLbTagEdit();
+    renderTagSuggestions('lightbox');
   }
 }
 function cancelLbTagEdit(){ closeLbTagEditor(); }
