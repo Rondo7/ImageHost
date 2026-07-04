@@ -74,9 +74,10 @@ var (
 
 func (h *Handler) ListImages(c *gin.Context) {
 	tags := parseTags(c)
+	excludeTags := parseExcludeTags(c)
 	page, limit := parsePage(c)
 
-	images, total, err := h.db.GetImages(tags, page, limit)
+	images, total, err := h.db.GetImages(tags, excludeTags, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -415,6 +416,17 @@ func parseTags(c *gin.Context) []string {
 		tags = append(tags, t)
 	}
 	if t := c.Query("tags"); t != "" {
+		tags = append(tags, splitTags(t)...)
+	}
+	return tags
+}
+
+func parseExcludeTags(c *gin.Context) []string {
+	var tags []string
+	if t := c.Query("exclude"); t != "" {
+		tags = append(tags, t)
+	}
+	if t := c.Query("excludes"); t != "" {
 		tags = append(tags, splitTags(t)...)
 	}
 	return tags

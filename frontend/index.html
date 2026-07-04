@@ -120,6 +120,10 @@ button { font-family: var(--font); cursor: pointer; }
   background: var(--c-tag-act); color: var(--c-tag-afg);
   font-size: 12px; font-weight: 500; max-width: 120px;
 }
+.search-chip.exclude {
+  background: color-mix(in srgb, var(--c-red) 82%, #111 18%);
+  color: #fff;
+}
 .search-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-chip-x {
   width: 15px; height: 15px; border-radius: 50%;
@@ -138,6 +142,10 @@ button { font-family: var(--font); cursor: pointer; }
   color: var(--c-text); outline: none;
 }
 .search-input::placeholder { color: var(--c-text3); }
+.filter-tag-suggest {
+  top: calc(100% + 6px);
+  border-radius: 14px;
+}
 .header-right {
   display: flex; align-items: center; gap: 6px; flex-shrink: 0;
 }
@@ -213,6 +221,19 @@ button { font-family: var(--font); cursor: pointer; }
   text-transform: uppercase; color: var(--c-text3);
   white-space: nowrap; flex-shrink: 0;
 }
+.tag-mode-toggle {
+  height: 26px; padding: 0 10px; border-radius: 99px;
+  border: 1px solid var(--c-border2);
+  background: var(--c-surface2); color: var(--c-text2);
+  font-size: 12px; font-weight: 600; flex-shrink: 0;
+  cursor: pointer; transition: all .15s;
+}
+.tag-mode-toggle:hover { background: var(--c-surface3); color: var(--c-text); }
+.tag-mode-toggle.exclude {
+  background: color-mix(in srgb, var(--c-red) 14%, transparent);
+  border-color: color-mix(in srgb, var(--c-red) 42%, transparent);
+  color: var(--c-red);
+}
 .tag {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 0 10px; height: 26px; border-radius: 99px;
@@ -222,6 +243,16 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .tag:hover { background: var(--c-surface3); color: var(--c-text); }
 .tag.on { background: var(--c-tag-act); color: var(--c-tag-afg); }
+.tag.exclude {
+  background: color-mix(in srgb, var(--c-red) 16%, transparent);
+  border-color: color-mix(in srgb, var(--c-red) 38%, transparent);
+  color: var(--c-red);
+}
+.tag.exclude.on {
+  background: color-mix(in srgb, var(--c-red) 82%, #111 18%);
+  border-color: transparent;
+  color: #fff;
+}
 .tag-count {
   font-size: 10px; font-family: var(--mono); opacity: .55;
 }
@@ -867,6 +898,7 @@ button { font-family: var(--font); cursor: pointer; }
         </svg>
         <div class="search-tags" id="searchTags"></div>
         <input class="search-input" id="searchInput" type="text" placeholder="输入标签后回车…">
+        <div class="tag-suggest filter-tag-suggest" id="filterTagSuggest"></div>
       </div>
   </div>
   <div class="header-right">
@@ -912,6 +944,7 @@ button { font-family: var(--font); cursor: pointer; }
 <!-- TAG ROW -->
 <div class="tagrow" id="tagrow">
   <span class="tagrow-label">筛选</span>
+  <button class="tag-mode-toggle" id="tagModeBtn" type="button" onclick="toggleTagClickMode()">包含</button>
   <div id="tagPills" style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;"></div>
 </div>
 
@@ -1081,7 +1114,7 @@ button { font-family: var(--font); cursor: pointer; }
 /* ────────────────────────────────── STATE */
 const PWKEY = 'ih_pwd';
 let page=1, PG=20, total=0, loading=false, done=false;
-let activeTags=[], q='';
+let activeTags=[], activeExcludeTags=[], q='', tagClickMode='include';
 let allTags=[];
 let pwd='';
 let files=[], chips=[];
@@ -1152,6 +1185,7 @@ async function init(){
   } else { setAuth(''); }
 
   await loadUploadLimits();
+  applyUrlFilters();
   await loadTags();
   await loadImgs(true);
   setupIO();
@@ -1163,8 +1197,15 @@ async function init(){
     galleryRO.observe(document.getElementById('gallery'));
   }
   document.getElementById('searchInput').addEventListener('keydown', onSearchKey);
+  document.getElementById('searchInput').addEventListener('input', ()=>renderTagSuggestions('filter'));
+  document.getElementById('searchInput').addEventListener('focus', ()=>openTagSuggestions('filter'));
   document.getElementById('fileInput').addEventListener('change', e => onFiles(e.target.files));
+  window.addEventListener('popstate', ()=>{
+    applyUrlFilters();
+    loadImgs(true);
+  });
   document.addEventListener('click', e=>{
+    if(!e.target.closest('.search-box')) closeTagSuggestions('filter');
     if(!e.target.closest('.tag-input-wrap')) closeTagSuggestions('upload');
     if(!e.target.closest('.lb-tag-input-wrap')) closeTagSuggestions('lightbox');
   });
@@ -1237,16 +1278,24 @@ async function loadTags(){
 }
 function renderTags(tags){
   const c = document.getElementById('tagPills'); c.innerHTML='';
-  const all = mktag('全部',null,activeTags.length===0);
-  all.onclick = ()=>{ activeTags=[]; syncTags(); loadImgs(true); document.getElementById('clearBtn').style.display='none'; };
+  const all = mktag('全部',null,activeTags.length===0 && activeExcludeTags.length===0);
+  all.onclick = ()=>{ activeTags=[]; activeExcludeTags=[]; commitFilters(); };
   c.appendChild(all);
   tags.forEach(t=>{
-    const el = mktag(t.name, t.count, activeTags.includes(t.name));
+    const el = mktag(t.name, t.count, activeTags.includes(t.name), activeExcludeTags.includes(t.name));
     el.onclick = ()=>toggleTag(t.name);
     c.appendChild(el);
   });
 }
 function tagSuggestConfig(ctx){
+  if(ctx==='filter'){
+    return {
+      input: document.getElementById('searchInput'),
+      menu: document.getElementById('filterTagSuggest'),
+      selected: ()=>activeTags.concat(activeExcludeTags),
+      add: addSearchTag,
+    };
+  }
   if(ctx==='lightbox'){
     return {
       input: document.getElementById('lbTagInput'),
@@ -1263,10 +1312,17 @@ function tagSuggestConfig(ctx){
   };
 }
 function normalizeTag(raw){ return String(raw||'').trim().replace(/,/g,''); }
+function parseFilterTag(raw){
+  let value=String(raw||'').trim().replace(/,/g,'');
+  const exclude=value.startsWith('!');
+  if(exclude) value=value.slice(1).trim();
+  return {tag:value, exclude};
+}
 function suggestedTags(ctx){
   const cfg=tagSuggestConfig(ctx);
   if(!cfg.input) return [];
-  const q=cfg.input.value.trim().toLowerCase();
+  const parsed = ctx==='filter' ? parseFilterTag(cfg.input.value) : null;
+  const q=(parsed ? parsed.tag : cfg.input.value.trim()).toLowerCase();
   const selected=new Set(cfg.selected().map(t=>String(t).toLowerCase()));
   return allTags
     .filter(t=>t && t.name && !selected.has(String(t.name).toLowerCase()))
@@ -1300,7 +1356,7 @@ function renderTagSuggestions(ctx){
       btn.addEventListener('pointerdown', e=>{
         e.preventDefault();
         e.stopPropagation();
-        chooseSuggestedTag(ctx, t.name);
+        chooseSuggestedTag(ctx, ctx==='filter' && cfg.input.value.trim().startsWith('!') ? '!'+t.name : t.name);
       });
       const name=document.createElement('span');
       name.className='tag-suggest-name';
@@ -1323,7 +1379,9 @@ function chooseSuggestedTag(ctx,name){
 }
 function firstSuggestedTagName(ctx){
   const tags=suggestedTags(ctx);
-  return tags.length ? tags[0].name : '';
+  if(!tags.length) return '';
+  const cfg=tagSuggestConfig(ctx);
+  return ctx==='filter' && cfg.input.value.trim().startsWith('!') ? '!'+tags[0].name : tags[0].name;
 }
 function addUploadTag(raw){
   const tag=normalizeTag(raw);
@@ -1348,66 +1406,160 @@ function handleTagInputKey(e,ctx){
     if(tag){ e.target.value=tag; renderTagSuggestions(ctx); }
   }
 }
-function mktag(name,count,on){
+function mktag(name,count,on,excluded=false){
   const el = document.createElement('div');
-  el.className = 'tag'+(on?' on':''); el.dataset.tag = name;
+  el.className = 'tag'+(on?' on':'')+(excluded?' exclude on':''); el.dataset.tag = name;
   el.innerHTML = name + (count!=null ? `<span class="tag-count">${count}</span>`:'');
   return el;
 }
 function syncTags(){
   document.querySelectorAll('.tag[data-tag]').forEach(el=>{
     const t = el.dataset.tag;
-    if(t==='全部') el.classList.toggle('on', activeTags.length===0);
-    else el.classList.toggle('on', activeTags.includes(t));
+    const excluded = activeExcludeTags.includes(t);
+    el.classList.toggle('exclude', excluded);
+    if(t==='全部') el.classList.toggle('on', activeTags.length===0 && activeExcludeTags.length===0);
+    else el.classList.toggle('on', activeTags.includes(t) || excluded);
   });
+  const modeBtn=document.getElementById('tagModeBtn');
+  if(modeBtn){
+    modeBtn.classList.toggle('exclude', tagClickMode==='exclude');
+    modeBtn.textContent = tagClickMode==='exclude' ? '排除' : '包含';
+    modeBtn.title = tagClickMode==='exclude' ? '点击标签会加入排除筛选' : '点击标签会加入包含筛选';
+  }
   renderSearchTags();
+}
+function uniqueTags(tags){
+  const out=[];
+  tags.forEach(raw=>{
+    const tag=String(raw||'').trim().replace(/,/g,'');
+    if(tag && !out.includes(tag)) out.push(tag);
+  });
+  return out;
+}
+function tagsFromUrl(){
+  const params=new URLSearchParams(location.search);
+  const tags=[];
+  params.getAll('tag').forEach(t=>tags.push(t));
+  const grouped=params.get('tags');
+  if(grouped) grouped.split(',').forEach(t=>tags.push(t));
+  return uniqueTags(tags);
+}
+function excludeTagsFromUrl(){
+  const params=new URLSearchParams(location.search);
+  const tags=[];
+  params.getAll('exclude').forEach(t=>tags.push(t));
+  const grouped=params.get('excludes');
+  if(grouped) grouped.split(',').forEach(t=>tags.push(t));
+  return uniqueTags(tags);
+}
+function updateFilterUrl(replace=false){
+  const url=new URL(location.href);
+  url.searchParams.delete('tag');
+  url.searchParams.delete('tags');
+  url.searchParams.delete('exclude');
+  url.searchParams.delete('excludes');
+  if(activeTags.length===1) url.searchParams.set('tag', activeTags[0]);
+  else if(activeTags.length>1) url.searchParams.set('tags', activeTags.join(','));
+  if(activeExcludeTags.length===1) url.searchParams.set('exclude', activeExcludeTags[0]);
+  else if(activeExcludeTags.length>1) url.searchParams.set('excludes', activeExcludeTags.join(','));
+  const next=url.pathname + url.search + url.hash;
+  const cur=location.pathname + location.search + location.hash;
+  if(next!==cur) history[replace?'replaceState':'pushState'](null, '', next);
+}
+function applyUrlFilters(){
+  activeTags=tagsFromUrl();
+  activeExcludeTags=excludeTagsFromUrl();
+  activeExcludeTags=activeExcludeTags.filter(t=>!activeTags.includes(t));
+  q='';
+  const input=document.getElementById('searchInput');
+  if(input) input.value='';
+  const clearBtn=document.getElementById('clearBtn');
+  if(clearBtn) clearBtn.style.display = activeTags.length || activeExcludeTags.length ? '' : 'none';
+  syncTags();
+}
+function commitFilters(replace=false){
+  activeTags=uniqueTags(activeTags);
+  activeExcludeTags=uniqueTags(activeExcludeTags).filter(t=>!activeTags.includes(t));
+  q='';
+  const input=document.getElementById('searchInput');
+  if(input) input.value='';
+  const clearBtn=document.getElementById('clearBtn');
+  if(clearBtn) clearBtn.style.display = activeTags.length || activeExcludeTags.length ? '' : 'none';
+  syncTags();
+  renderTagSuggestions('filter');
+  updateFilterUrl(replace);
+  loadImgs(true);
 }
 function renderSearchTags(){
   const box=document.getElementById('searchTags');
   if(!box) return;
-  box.innerHTML=activeTags.map((tag,i)=>
+  const includeHtml=activeTags.map((tag,i)=>
     `<span class="search-chip"><span class="search-chip-name">${esc(tag)}</span><button class="search-chip-x" onclick="removeSearchTag(${i})">✕</button></span>`
   ).join('');
+  const excludeHtml=activeExcludeTags.map((tag,i)=>
+    `<span class="search-chip exclude"><span class="search-chip-name">!${esc(tag)}</span><button class="search-chip-x" onclick="removeExcludeSearchTag(${i})">✕</button></span>`
+  ).join('');
+  box.innerHTML=includeHtml+excludeHtml;
   const input=document.getElementById('searchInput');
-  if(input) input.placeholder = activeTags.length ? '继续添加标签…' : '输入标签后回车…';
+  if(input) input.placeholder = activeTags.length || activeExcludeTags.length ? '继续添加标签…' : '输入标签后回车…';
 }
 function addSearchTag(raw){
-  const tag=raw.trim().replace(/,/g,'');
+  const parsed=parseFilterTag(raw);
+  const tag=parsed.tag;
   if(!tag) return;
-  q='';
-  if(!activeTags.includes(tag)) activeTags.push(tag);
-  document.getElementById('clearBtn').style.display = activeTags.length?'':'none';
-  syncTags();
-  loadImgs(true);
+  if(parsed.exclude){
+    activeTags=activeTags.filter(x=>x!==tag);
+    if(!activeExcludeTags.includes(tag)) activeExcludeTags.push(tag);
+  }else{
+    activeExcludeTags=activeExcludeTags.filter(x=>x!==tag);
+    if(!activeTags.includes(tag)) activeTags.push(tag);
+  }
+  commitFilters();
 }
 function removeSearchTag(i){
   activeTags.splice(i,1);
-  document.getElementById('clearBtn').style.display = activeTags.length?'':'none';
-  syncTags();
-  loadImgs(true);
+  commitFilters();
+}
+function removeExcludeSearchTag(i){
+  activeExcludeTags.splice(i,1);
+  commitFilters();
 }
 function onSearchKey(e){
   if(e.key==='Enter'||e.key===','){
     e.preventDefault();
-    addSearchTag(e.target.value);
+    const raw=e.target.value;
+    const parsed=parseFilterTag(raw);
+    addSearchTag(parsed.tag ? raw : firstSuggestedTagName('filter'));
     e.target.value='';
   }else if(e.key==='Backspace'&&e.target.value===''&&activeTags.length){
     activeTags.pop();
-    document.getElementById('clearBtn').style.display = activeTags.length?'':'none';
-    syncTags();
-    loadImgs(true);
+    commitFilters();
+  }else if(e.key==='Backspace'&&e.target.value===''&&activeExcludeTags.length){
+    activeExcludeTags.pop();
+    commitFilters();
+  }else if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+    e.preventDefault();
+    const tag=firstSuggestedTagName('filter');
+    if(tag){ e.target.value=tag; renderTagSuggestions('filter'); }
   }
 }
 function toggleTag(name){
-  activeTags.includes(name) ? (activeTags=activeTags.filter(x=>x!==name)) : activeTags.push(name);
-  syncTags();
-  document.getElementById('clearBtn').style.display = activeTags.length?'':'none';
-  loadImgs(true);
+  if(tagClickMode==='exclude'){
+    activeTags=activeTags.filter(x=>x!==name);
+    activeExcludeTags.includes(name) ? (activeExcludeTags=activeExcludeTags.filter(x=>x!==name)) : activeExcludeTags.push(name);
+  }else{
+    activeExcludeTags=activeExcludeTags.filter(x=>x!==name);
+    activeTags.includes(name) ? (activeTags=activeTags.filter(x=>x!==name)) : activeTags.push(name);
+  }
+  commitFilters();
 }
 function clearFilters(){
-  activeTags=[]; q=''; document.getElementById('searchInput').value='';
-  document.getElementById('clearBtn').style.display='none';
-  syncTags(); loadImgs(true);
+  activeTags=[]; activeExcludeTags=[];
+  commitFilters();
+}
+function toggleTagClickMode(){
+  tagClickMode = tagClickMode==='exclude' ? 'include' : 'exclude';
+  syncTags();
 }
 function setupTagRowMouseScroll(){
   const row = document.getElementById('tagrow');
@@ -1496,6 +1648,8 @@ async function loadImgs(reset=false){
   if(q) url+=`&tag=${encodeURIComponent(q)}`;
   else if(activeTags.length===1) url+=`&tag=${encodeURIComponent(activeTags[0])}`;
   else if(activeTags.length>1) url+=`&tags=${encodeURIComponent(activeTags.join(','))}`;
+  if(activeExcludeTags.length===1) url+=`&exclude=${encodeURIComponent(activeExcludeTags[0])}`;
+  else if(activeExcludeTags.length>1) url+=`&excludes=${encodeURIComponent(activeExcludeTags.join(','))}`;
 
   try{
     const r = await fetch(url);
@@ -1508,7 +1662,9 @@ async function loadImgs(reset=false){
     batch.forEach(img=>{ imgs.push(img); });
     done = imgs.length >= total || batch.length < PG;
     document.getElementById('emptyState').style.display = total===0 ? '' : 'none';
-    const f = activeTags.length ? ` · ${activeTags.join(', ')}` : q ? ` · "${q}"` : '';
+    const includeText = activeTags.length ? activeTags.join(', ') : q ? `"${q}"` : '';
+    const excludeText = activeExcludeTags.length ? `排除 ${activeExcludeTags.join(', ')}` : '';
+    const f = includeText || excludeText ? ` · ${[includeText, excludeText].filter(Boolean).join(' · ')}` : '';
     document.getElementById('barCount').innerHTML = `<b>${total}</b> 张图片${f}`;
     page = currentPage + 1;
   }catch(e){
@@ -1750,7 +1906,12 @@ function createCard(img){
 }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function jsString(s){ return JSON.stringify(String(s)); }
-function filterTag(name){ if(!activeTags.includes(name)){ activeTags.push(name); syncTags(); document.getElementById('clearBtn').style.display=''; loadImgs(true); } }
+function filterTag(name){
+  if(!activeTags.includes(name)){
+    activeTags.push(name);
+    commitFilters();
+  }
+}
 
 function imageById(id){
   return imgs.find(x=>String(x.id)===String(id));

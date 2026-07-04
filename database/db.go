@@ -145,11 +145,30 @@ func (db *DB) SetImageTags(imageID int64, tags []string) ([]string, error) {
 	return cleaned, nil
 }
 
-func (db *DB) GetImages(tags []string, page, limit int) ([]*Image, int, error) {
+func (db *DB) GetImages(tags, excludeTags []string, page, limit int) ([]*Image, int, error) {
 	offset := (page - 1) * limit
-	var query string
+	where, filterArgs := buildImageTagWhere(tags, excludeTags)
+
+	var total int
+	countArgs := append([]interface{}{}, filterArgs...)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM images i `+where, countArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	args := append([]interface{}{}, filterArgs...)
+	args = append(args, limit, offset)
+	rows, err := db.Query(`SELECT i.id, i.filename, i.webp_path, i.orig_path, i.is_gif, i.width, i.height, i.size, i.created_at FROM images i `+where+` ORDER BY i.created_at DESC, i.id DESC LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	images, err := scanImages(db, rows)
+	return images, total, err
+}
+
+func buildImageTagWhere(tags, excludeTags []string) (string, []interface{}) {
+	var clauses []string
 	var args []interface{}
-	var countArgs []interface{}
 
 	if len(tags) > 0 {
 		placeholders := ""
@@ -159,46 +178,37 @@ func (db *DB) GetImages(tags []string, page, limit int) ([]*Image, int, error) {
 			}
 			placeholders += "?"
 			args = append(args, t)
-			countArgs = append(countArgs, t)
 		}
-		nTags := len(tags)
-		baseWhere := `
-			FROM images i
-			WHERE (
+		clauses = append(clauses, `
+			(
 				SELECT COUNT(DISTINCT t.name) FROM image_tags it
 				JOIN tags t ON t.id = it.tag_id
-				WHERE it.image_id = i.id AND t.name IN (` + placeholders + `)
-			) = ?`
-		args = append(args, nTags)
-		countArgs = append(countArgs, nTags)
-		query = `SELECT i.id, i.filename, i.webp_path, i.orig_path, i.is_gif, i.width, i.height, i.size, i.created_at ` +
-			baseWhere + ` ORDER BY i.created_at DESC, i.id DESC LIMIT ? OFFSET ?`
-		args = append(args, limit, offset)
-		countQuery := `SELECT COUNT(*) ` + baseWhere
-		var total int
-		if err := db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
-			return nil, 0, err
-		}
-		rows, err := db.Query(query, args...)
-		if err != nil {
-			return nil, 0, err
-		}
-		defer rows.Close()
-		images, err := scanImages(db, rows)
-		return images, total, err
+				WHERE it.image_id = i.id AND t.name IN (`+placeholders+`)
+			) = ?`)
+		args = append(args, len(tags))
 	}
 
-	var total int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM images`).Scan(&total); err != nil {
-		return nil, 0, err
+	if len(excludeTags) > 0 {
+		placeholders := ""
+		for i, t := range excludeTags {
+			if i > 0 {
+				placeholders += ","
+			}
+			placeholders += "?"
+			args = append(args, t)
+		}
+		clauses = append(clauses, `
+			NOT EXISTS (
+				SELECT 1 FROM image_tags it
+				JOIN tags t ON t.id = it.tag_id
+				WHERE it.image_id = i.id AND t.name IN (`+placeholders+`)
+			)`)
 	}
-	rows, err := db.Query(`SELECT id, filename, webp_path, orig_path, is_gif, width, height, size, created_at FROM images ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, limit, offset)
-	if err != nil {
-		return nil, 0, err
+
+	if len(clauses) == 0 {
+		return "", args
 	}
-	defer rows.Close()
-	images, err := scanImages(db, rows)
-	return images, total, err
+	return "WHERE " + strings.Join(clauses, " AND "), args
 }
 
 func scanImages(db *DB, rows *sql.Rows) ([]*Image, error) {
