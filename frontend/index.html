@@ -100,14 +100,17 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .search-box {
   position: relative; width: 100%; max-width: 360px;
-  min-height: 32px;
+  height: 32px;
   background: var(--c-surface2);
   border: 1px solid var(--c-border);
   border-radius: 99px;
   padding: 3px 10px 3px 30px;
-  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 5px;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -ms-overflow-style: none;
   transition: border-color .15s, background .15s;
 }
+.search-box::-webkit-scrollbar { display: none; }
 .search-box:focus-within { border-color: var(--c-border2); background: var(--c-surface); }
 .search-box svg {
   position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
