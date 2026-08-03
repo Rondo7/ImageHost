@@ -63,6 +63,7 @@ func main() {
 	// Static files (serve uploads from the configured storage dir)
 	r.Static("/uploads", cfg.StorageDir)
 	r.StaticFile("/", "./frontend/index.html")
+	r.StaticFile("/admin", "./frontend/admin.html")
 	r.Static("/frontend", "./frontend")
 
 	// ── Public API ────────────────────────────────────────────────────────
@@ -87,7 +88,8 @@ func main() {
 	{
 		mgmt.POST("/images", h.APIUpload)               // upload one or more images
 		mgmt.DELETE("/images/:id", h.DeleteImage)       // delete by id
-		mgmt.PUT("/images/:id/tags", h.UpdateImageTags) // replace image tags
+		mgmt.PUT("/images/:id/tags", h.UpdateImageTags)   // replace image tags
+		mgmt.PUT("/images/:id/title", h.UpdateImageTitle) // update image title
 		mgmt.GET("/images", h.ListImages)               // list with pagination
 		mgmt.GET("/images/:id", h.GetImage)             // get single image info
 	}

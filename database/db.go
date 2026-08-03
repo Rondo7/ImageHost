@@ -15,6 +15,7 @@ type DB struct {
 type Image struct {
 	ID        int64     `json:"id"`
 	Filename  string    `json:"filename"`
+	Title     string    `json:"title"`
 	WebpPath  string    `json:"webp_path"`
 	OrigPath  string    `json:"orig_path"`
 	IsGif     bool      `json:"is_gif"`
@@ -41,6 +42,7 @@ func Init(path string) (*DB, error) {
 	CREATE TABLE IF NOT EXISTS images (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		filename TEXT NOT NULL,
+		title TEXT DEFAULT '',
 		webp_path TEXT NOT NULL,
 		orig_path TEXT NOT NULL,
 		is_gif BOOLEAN DEFAULT 0,
@@ -66,13 +68,18 @@ func Init(path string) (*DB, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}
+
+	// Migration: add title column for databases created before it existed.
+	// Ignore errors (e.g. "duplicate column name") so this is idempotent.
+	_, _ = db.Exec(`ALTER TABLE images ADD COLUMN title TEXT DEFAULT ''`)
+
 	return &DB{db}, nil
 }
 
 func (db *DB) InsertImage(img *Image) (int64, error) {
 	res, err := db.Exec(
-		`INSERT INTO images (filename, webp_path, orig_path, is_gif, width, height, size) VALUES (?,?,?,?,?,?,?)`,
-		img.Filename, img.WebpPath, img.OrigPath, img.IsGif, img.Width, img.Height, img.Size,
+		`INSERT INTO images (filename, webp_path, orig_path, is_gif, width, height, size, title) VALUES (?,?,?,?,?,?,?,?)`,
+		img.Filename, img.WebpPath, img.OrigPath, img.IsGif, img.Width, img.Height, img.Size, img.Title,
 	)
 	if err != nil {
 		return 0, err
@@ -157,7 +164,7 @@ func (db *DB) GetImages(tags, excludeTags []string, page, limit int) ([]*Image, 
 
 	args := append([]interface{}{}, filterArgs...)
 	args = append(args, limit, offset)
-	rows, err := db.Query(`SELECT i.id, i.filename, i.webp_path, i.orig_path, i.is_gif, i.width, i.height, i.size, i.created_at FROM images i `+where+` ORDER BY i.created_at DESC, i.id DESC LIMIT ? OFFSET ?`, args...)
+	rows, err := db.Query(`SELECT i.id, i.filename, i.title, i.webp_path, i.orig_path, i.is_gif, i.width, i.height, i.size, i.created_at FROM images i `+where+` ORDER BY i.created_at DESC, i.id DESC LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -215,7 +222,7 @@ func scanImages(db *DB, rows *sql.Rows) ([]*Image, error) {
 	var images []*Image
 	for rows.Next() {
 		img := &Image{}
-		if err := rows.Scan(&img.ID, &img.Filename, &img.WebpPath, &img.OrigPath, &img.IsGif, &img.Width, &img.Height, &img.Size, &img.CreatedAt); err != nil {
+		if err := rows.Scan(&img.ID, &img.Filename, &img.Title, &img.WebpPath, &img.OrigPath, &img.IsGif, &img.Width, &img.Height, &img.Size, &img.CreatedAt); err != nil {
 			return nil, err
 		}
 		tags, err := db.GetImageTags(img.ID)
@@ -269,7 +276,7 @@ func (db *DB) GetRandomImage(tags []string, excludeID int64) (*Image, error) {
 			args = append(args, excludeID)
 		}
 
-		query = `SELECT id, filename, webp_path, orig_path, is_gif, width, height, size, created_at
+		query = `SELECT id, filename, title, webp_path, orig_path, is_gif, width, height, size, created_at
 			FROM images i
 			WHERE (
 				SELECT COUNT(DISTINCT t.name) FROM image_tags it JOIN tags t ON t.id = it.tag_id
@@ -282,13 +289,13 @@ func (db *DB) GetRandomImage(tags []string, excludeID int64) (*Image, error) {
 			excludeClause = "WHERE id != ? "
 			args = append(args, excludeID)
 		}
-		query = `SELECT id, filename, webp_path, orig_path, is_gif, width, height, size, created_at
+		query = `SELECT id, filename, title, webp_path, orig_path, is_gif, width, height, size, created_at
 			FROM images ` + excludeClause + `ORDER BY RANDOM() LIMIT 1`
 	}
 
 	img := &Image{}
 	err := db.QueryRow(query, args...).Scan(
-		&img.ID, &img.Filename, &img.WebpPath, &img.OrigPath,
+		&img.ID, &img.Filename, &img.Title, &img.WebpPath, &img.OrigPath,
 		&img.IsGif, &img.Width, &img.Height, &img.Size, &img.CreatedAt,
 	)
 	if err != nil {
@@ -373,20 +380,20 @@ func (db *DB) GetRandomImageExcluding(tags []string, excluded map[int64]bool) (*
 		args = append(args, nTags)
 		args = append(args, excArgs...)
 
-		query = `SELECT id, filename, webp_path, orig_path, is_gif, width, height, size, created_at
+		query = `SELECT id, filename, title, webp_path, orig_path, is_gif, width, height, size, created_at
 			FROM images i
 			WHERE (SELECT COUNT(DISTINCT t.name) FROM image_tags it JOIN tags t ON t.id = it.tag_id
 			WHERE it.image_id = i.id AND t.name IN (` + placeholders + `)) = ?` +
 			excClause + ` ORDER BY RANDOM() LIMIT 1`
 	} else {
 		args = excArgs
-		query = `SELECT id, filename, webp_path, orig_path, is_gif, width, height, size, created_at
+		query = `SELECT id, filename, title, webp_path, orig_path, is_gif, width, height, size, created_at
 			FROM images WHERE 1=1` + excClause + ` ORDER BY RANDOM() LIMIT 1`
 	}
 
 	img := &Image{}
 	err := db.QueryRow(query, args...).Scan(
-		&img.ID, &img.Filename, &img.WebpPath, &img.OrigPath,
+		&img.ID, &img.Filename, &img.Title, &img.WebpPath, &img.OrigPath,
 		&img.IsGif, &img.Width, &img.Height, &img.Size, &img.CreatedAt,
 	)
 	if err != nil {
@@ -401,12 +408,24 @@ func (db *DB) GetRandomImageExcluding(tags []string, excluded map[int64]bool) (*
 func (db *DB) GetImageByID(id int64) (*Image, error) {
 	img := &Image{}
 	err := db.QueryRow(
-		`SELECT id, filename, webp_path, orig_path, is_gif, width, height, size, created_at FROM images WHERE id = ?`, id,
-	).Scan(&img.ID, &img.Filename, &img.WebpPath, &img.OrigPath, &img.IsGif, &img.Width, &img.Height, &img.Size, &img.CreatedAt)
+		`SELECT id, filename, title, webp_path, orig_path, is_gif, width, height, size, created_at FROM images WHERE id = ?`, id,
+	).Scan(&img.ID, &img.Filename, &img.Title, &img.WebpPath, &img.OrigPath, &img.IsGif, &img.Width, &img.Height, &img.Size, &img.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	tags, _ := db.GetImageTags(img.ID)
 	img.Tags = tags
 	return img, nil
+}
+
+// UpdateImageTitle sets the display title of an image by ID.
+func (db *DB) UpdateImageTitle(imageID int64, title string) (*Image, error) {
+	res, err := db.Exec(`UPDATE images SET title = ? WHERE id = ?`, title, imageID)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return db.GetImageByID(imageID)
 }

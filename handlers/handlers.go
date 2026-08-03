@@ -331,6 +331,39 @@ func (h *Handler) UpdateImageTags(c *gin.Context) {
 	c.JSON(http.StatusOK, toResp(img))
 }
 
+// UpdateImageTitle updates the display title of an image.
+func (h *Handler) UpdateImageTitle(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid title"})
+		return
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if len(title) > 200 {
+		title = title[:200]
+	}
+
+	img, err := h.db.UpdateImageTitle(id, title)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, toResp(img))
+}
+
 // ── SSE progress stream ───────────────────────────────────────────────────────
 
 func (h *Handler) ProgressStream(c *gin.Context) {
@@ -388,6 +421,7 @@ type UploadResult struct {
 
 type imageResp struct {
 	ID        int64     `json:"id"`
+	Title     string    `json:"title"`
 	WebpURL   string    `json:"webp_url"`
 	OrigURL   string    `json:"orig_url"`
 	IsGif     bool      `json:"is_gif"`
@@ -400,6 +434,7 @@ type imageResp struct {
 func toResp(img *database.Image) imageResp {
 	return imageResp{
 		ID:        img.ID,
+		Title:     img.Title,
 		WebpURL:   "/" + img.WebpPath,
 		OrigURL:   "/" + img.OrigPath,
 		IsGif:     img.IsGif,

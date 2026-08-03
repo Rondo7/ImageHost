@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ImageHost</title>
+<title>ImageHost · 管理</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/frontend/style.css">
@@ -12,10 +12,11 @@
 
 <!-- HEADER -->
 <header class="header">
-  <div class="logo">
+  <a class="logo" href="/" title="返回首页">
     <span class="logo-dot"></span>
     ImageHost
-  </div>
+    <span class="logo-badge">管理</span>
+  </a>
   <div class="header-search">
       <div class="search-box">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -27,6 +28,20 @@
       </div>
   </div>
   <div class="header-right">
+    <!-- back to home -->
+    <a class="btn hide-mobile" href="/" title="返回首页浏览">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      浏览
+    </a>
+    <!-- login state pill -->
+    <div class="user-pill" id="userPill">
+      <span class="user-pill-dot"></span>
+      <span class="user-pill-name" id="userPillName"></span>
+      <span class="user-pill-sep"></span>
+      <button class="user-pill-logout" onclick="logout()">退出</button>
+    </div>
     <!-- api help -->
     <button class="btn-icon" onclick="openApiHelp()" title="随机图片 API 说明">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
@@ -43,6 +58,22 @@
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
         </svg>
       </span>
+    </button>
+    <!-- upload (hidden until logged in) -->
+    <button class="btn btn-ink" id="uploadBtn" style="display:none" onclick="openUpload()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      上传
+    </button>
+    <!-- login (shown when not logged in) -->
+    <button class="btn" id="loginBtn" onclick="openAuth()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+        <polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+      </svg>
+      登录
     </button>
   </div>
 </header>
@@ -71,6 +102,7 @@
         <span class="bulk-count" id="bulkCount">已选 0</span>
         <button class="btn btn-bulk" onclick="batchCopyUrls()">复制 URL</button>
         <button class="btn btn-bulk" onclick="batchDownloadImages()">下载</button>
+        <button class="btn btn-bulk btn-bulk-danger" id="bulkDeleteBtn" onclick="batchDeleteImages()">删除</button>
         <button class="btn btn-bulk" onclick="clearSelection()">取消</button>
       </div>
       <button class="btn" id="clearBtn" style="display:none;font-size:12px;height:28px;padding:0 10px" onclick="clearFilters()">
@@ -84,7 +116,79 @@
   <div class="empty" id="emptyState" style="display:none">
     <div class="empty-icon">◻</div>
     <h3>暂无图片</h3>
-    <p>去管理页面<a href="/admin" style="color:var(--c-text2);text-decoration:underline">上传一些图片</a>开始吧</p>
+    <p>点击右上角「上传」按钮开始吧</p>
+  </div>
+</div>
+
+<!-- AUTH MODAL -->
+<div class="backdrop" id="authBackdrop">
+  <div class="sheet">
+    <div class="sheet-head">
+      <div>
+        <div class="sheet-title">登录</div>
+        <div class="sheet-sub">输入上传密码以进入管理</div>
+      </div>
+      <button class="sheet-x" onclick="closeAuth()">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label class="label">密码</label>
+        <input type="password" class="input" id="authPwd" placeholder="输入密码…" onkeydown="if(event.key==='Enter')submitAuth()">
+        <div class="err" id="authErr">密码错误，请重试</div>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" id="rememberMe" checked>
+        <span style="font-size:13px;color:var(--c-text2)">记住密码</span>
+      </label>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" onclick="closeAuth()">取消</button>
+      <button class="btn btn-ink" onclick="submitAuth()">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- UPLOAD MODAL -->
+<div class="backdrop" id="uploadBackdrop">
+  <div class="sheet upload-sheet">
+    <div class="sheet-head">
+      <div>
+        <div class="sheet-title">上传图片</div>
+        <div class="sheet-sub">支持 JPG · PNG · WebP · GIF，自动转 WebP</div>
+      </div>
+      <button class="sheet-x" onclick="closeUpload()">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="drop" id="dz">
+        <input type="file" id="fileInput" multiple accept="image/*">
+        <div class="drop-icon">⊕</div>
+        <div class="drop-text">点击选择或拖放图片</div>
+        <div class="drop-hint">支持批量</div>
+      </div>
+      <div class="up-ok" id="upOk"></div>
+      <div class="field" style="margin-top:12px">
+        <label class="label">
+          标签
+          <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--c-text3);letter-spacing:0"> — Enter 或逗号添加</span>
+        </label>
+        <div class="tag-input-wrap"><div class="tags-box" id="tagsBox" onclick="document.getElementById('tagTxt').focus()"><input type="text" id="tagTxt" class="ttxt" placeholder="添加标签…" onkeydown="onTagKey(event)" oninput="renderTagSuggestions('upload')" onfocus="openTagSuggestions('upload')"></div><div class="tag-suggest" id="uploadTagSuggest"></div></div>
+      </div>
+      <div class="flist-head" id="flistHead">
+        <span class="flist-title" id="flistTitle">待上传 0 张</span>
+        <button class="btn-clear-files" type="button" onclick="clearAllPendingFiles()">清空全部</button>
+      </div>
+      <div class="flist" id="flist"></div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" onclick="closeUpload()">取消</button>
+      <button class="btn btn-ink" id="doUpBtn" onclick="doUpload()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        开始上传
+      </button>
+    </div>
   </div>
 </div>
 
@@ -113,6 +217,24 @@
     </div>
   </div>
 
+  <div class="lb-tag-editor" id="lbTagEditor">
+    <div class="lb-tag-editor-title">编辑标签</div>
+    <div class="lb-tag-input-wrap"><div class="lb-tag-edit-box" id="lbTagEditBox" onclick="document.getElementById('lbTagInput').focus()"><input class="lb-tag-edit-input" id="lbTagInput" type="text" placeholder="输入标签，Enter 添加" onkeydown="lbTagInputKey(event)" oninput="renderTagSuggestions('lightbox')" onfocus="openTagSuggestions('lightbox')"></div><div class="tag-suggest lb-tag-suggest" id="lbTagSuggest"></div></div>
+    <div class="lb-tag-editor-actions">
+      <button class="lbtn" onclick="cancelLbTagEdit()">取消</button>
+      <button class="lbtn save" id="lbTagSaveBtn" onclick="saveLbTags()">保存标签</button>
+    </div>
+  </div>
+
+  <div class="lb-title-editor" id="lbTitleEditor">
+    <div class="lb-tag-editor-title">修改标题</div>
+    <input type="text" class="lb-title-input" id="lbTitleInput" maxlength="200" placeholder="输入图片标题…" onkeydown="if(event.key==='Enter')saveLbTitle()">
+    <div class="lb-tag-editor-actions">
+      <button class="lbtn" onclick="cancelLbTitleEdit()">取消</button>
+      <button class="lbtn save" id="lbTitleSaveBtn" onclick="saveLbTitle()">保存标题</button>
+    </div>
+  </div>
+
   <div class="lb-bar">
     <div class="lb-tags" id="lbTags"></div>
     <div class="lb-sep" id="lbSep" style="display:none"></div>
@@ -127,6 +249,14 @@
     <button class="lbtn" onclick="triggerDl()">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       下载原图
+    </button>
+    <button class="lbtn" id="lbEditTagsBtn" onclick="openLbTagEdit()">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      修改标签
+    </button>
+    <button class="lbtn" id="lbEditTitleBtn" onclick="openLbTitleEdit()">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+      修改标题
     </button>
   </div>
 </div>
@@ -170,15 +300,28 @@
   </div>
 </div>
 
+<div class="page-drop-hint" id="pageDropHint">
+  <div class="page-drop-card">
+    <div class="page-drop-icon">⊕</div>
+    <div class="page-drop-title">松开以加入上传队列</div>
+    <div class="page-drop-sub">可直接把图片拖拽到网页中上传</div>
+  </div>
+</div>
+
 <script>
 /* ────────────────────────────────── STATE */
+const PWKEY = 'ih_pwd';
 let page=1, PG=20, total=0, loading=false, done=false;
 let activeTags=[], activeExcludeTags=[], q='', tagClickMode='include';
 let allTags=[];
+let pwd='';
+let files=[], chips=[];
 let imgs=[], lbIdx=0;
 let selectedIds = new Set();
 let lbW='', lbO='', lbFn='';
+let lbEditTags=[];
 let tagExpanded=false;
+let uploadLimits={max_upload_mb:50,max_upload_count:50,resize_max_pixels:4000,reject_max_pixels:10000};
 let io=null, galleryRO=null, scrolledForMore=false, suppressScrollArm=false, loadSeq=0, layoutRAF=0;
 const VIRTUAL_MAX = 100;
 const VIRTUAL_BUFFER = 50;
@@ -197,13 +340,55 @@ function toggleTheme(){
     document.documentElement.dataset.theme = 'light';
 })();
 
+/* ────────────────────────────────── AUTH STATE */
+function setAuth(p){
+  pwd = p;
+  const pill = document.getElementById('userPill');
+  const name = document.getElementById('userPillName');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const loginBtn  = document.getElementById('loginBtn');
+  if(p){
+    name.textContent = p.length>2 ? p.slice(0,2)+'···' : '···';
+    pill.classList.add('show');
+    uploadBtn.style.display = '';
+    loginBtn.style.display = 'none';
+  } else {
+    pill.classList.remove('show');
+    uploadBtn.style.display = 'none';
+    loginBtn.style.display = '';
+  }
+  // Refresh gallery to show/hide delete buttons
+  document.querySelectorAll('.card-action.del').forEach(b => {
+    b.style.display = p ? '' : 'none';
+  });
+  updateSelectionUI();
+}
+function logout(){
+  setAuth('');
+  try{ localStorage.removeItem(PWKEY); }catch(e){}
+  toast('已退出登录');
+}
+async function verifyPwd(p){
+  try{
+    const r = await fetch('/api/v1/images?limit=1',{headers:{Authorization:`Bearer ${p}`}});
+    return r.status === 200;
+  }catch(e){ return false; }
+}
+
 /* ────────────────────────────────── INIT */
 async function init(){
+  const saved = (() => { try{ return localStorage.getItem(PWKEY)||''; }catch(e){ return ''; } })();
+  if(saved){
+    const ok = await verifyPwd(saved);
+    if(ok) setAuth(saved); else { try{localStorage.removeItem(PWKEY);}catch(e){} setAuth(''); }
+  } else { setAuth(''); }
+
+  await loadUploadLimits();
   applyUrlFilters();
   await loadTags();
   await loadImgs(true);
   setupIO();
-  setupTagBarBehavior();
+  setupPageImageDrop();
   window.addEventListener('resize', debounce(scheduleGalleryLayout, 120));
   if('ResizeObserver' in window){
     galleryRO = new ResizeObserver(()=>scheduleGalleryLayout());
@@ -212,17 +397,33 @@ async function init(){
   document.getElementById('searchInput').addEventListener('keydown', onSearchKey);
   document.getElementById('searchInput').addEventListener('input', ()=>renderTagSuggestions('filter'));
   document.getElementById('searchInput').addEventListener('focus', ()=>openTagSuggestions('filter'));
+  document.getElementById('fileInput').addEventListener('change', e => onFiles(e.target.files));
   window.addEventListener('popstate', ()=>{
     applyUrlFilters();
     loadImgs(true);
   });
   document.addEventListener('click', e=>{
     if(!e.target.closest('.search-box')) closeTagSuggestions('filter');
+    if(!e.target.closest('.tag-input-wrap')) closeTagSuggestions('upload');
+    if(!e.target.closest('.lb-tag-input-wrap')) closeTagSuggestions('lightbox');
   });
   document.getElementById('lb').addEventListener('click', e=>{
     const p = document.getElementById('urlPanel');
     if(!p.contains(e.target) && !e.target.closest('.lbtn')) p.classList.remove('on');
   });
+
+  const dz = document.getElementById('dz');
+  dz.addEventListener('click', e=>{
+    if(e.target.id !== 'fileInput') document.getElementById('fileInput').click();
+  });
+  dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('over');});
+  dz.addEventListener('dragleave', ()=>dz.classList.remove('over'));
+  dz.addEventListener('drop', e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('over');onFiles(e.dataTransfer.files);});
+
+  setupTagBarBehavior();
+
+  // 未登录时自动弹出登录框
+  if(!pwd) setTimeout(openAuth, 350);
 }
 
 /* ────────────────────────────────── TAG BAR (collapsible) */
@@ -284,13 +485,57 @@ function setupTagBarBehavior(){
   }, 150));
 }
 
+function hasDraggedImages(e){
+  const items = e.dataTransfer && e.dataTransfer.items;
+  if(items && items.length) return Array.from(items).some(item=>item.kind==='file' && item.type.startsWith('image/'));
+  const types = e.dataTransfer && e.dataTransfer.types;
+  return !!types && Array.from(types).includes('Files');
+}
+function imageFilesFromDataTransfer(dt){
+  return Array.from(dt.files||[]).filter(file=>file.type.startsWith('image/'));
+}
+function setupPageImageDrop(){
+  const hint = document.getElementById('pageDropHint');
+  let dragDepth = 0;
+  const uploadOpen = ()=>document.getElementById('uploadBackdrop').classList.contains('open');
+
+  window.addEventListener('dragenter', e=>{
+    if(!hasDraggedImages(e)) return;
+    dragDepth++;
+    if(!uploadOpen()) hint.classList.add('show');
+  });
+  window.addEventListener('dragover', e=>{
+    if(!hasDraggedImages(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    hint.classList.toggle('show', !uploadOpen());
+  });
+  window.addEventListener('dragleave', e=>{
+    if(!hasDraggedImages(e)) return;
+    dragDepth=Math.max(0,dragDepth-1);
+    if(dragDepth===0) hint.classList.remove('show');
+  });
+  window.addEventListener('drop', e=>{
+    if(!hasDraggedImages(e)) return;
+    e.preventDefault();
+    dragDepth=0;
+    hint.classList.remove('show');
+    const dropped = imageFilesFromDataTransfer(e.dataTransfer);
+    if(!dropped.length){ toast('请拖入图片文件','bad'); return; }
+    if(!pwd){ openAuth(); toast('请先登录后再上传','bad'); return; }
+    if(!uploadOpen()) openUpload(false);
+    onFiles(dropped);
+  });
+}
+
 /* ────────────────────────────────── TAGS */
 async function loadTags(){
   try{
     const d = await fetch('/api/tags').then(r=>r.json());
     allTags = d.tags||[];
     renderTags(allTags);
-    renderTagSuggestions('filter');
+    renderTagSuggestions('upload');
+    renderTagSuggestions('lightbox');
     if(tagExpanded) setTagExpanded(true);
   }catch(e){}
 }
@@ -314,7 +559,20 @@ function tagSuggestConfig(ctx){
       add: addSearchTag,
     };
   }
-  return null;
+  if(ctx==='lightbox'){
+    return {
+      input: document.getElementById('lbTagInput'),
+      menu: document.getElementById('lbTagSuggest'),
+      selected: ()=>lbEditTags,
+      add: addLbEditTag,
+    };
+  }
+  return {
+    input: document.getElementById('tagTxt'),
+    menu: document.getElementById('uploadTagSuggest'),
+    selected: ()=>chips,
+    add: addUploadTag,
+  };
 }
 function normalizeTag(raw){ return String(raw||'').trim().replace(/,/g,''); }
 function parseFilterTag(raw){
@@ -337,15 +595,15 @@ function suggestedTags(ctx){
 function openTagSuggestions(ctx){
   renderTagSuggestions(ctx);
   const cfg=tagSuggestConfig(ctx);
-  if(cfg && cfg.menu && cfg.menu.children.length) cfg.menu.classList.add('on');
+  if(cfg.menu && cfg.menu.children.length) cfg.menu.classList.add('on');
 }
 function closeTagSuggestions(ctx){
   const cfg=tagSuggestConfig(ctx);
-  if(cfg && cfg.menu) cfg.menu.classList.remove('on');
+  if(cfg.menu) cfg.menu.classList.remove('on');
 }
 function renderTagSuggestions(ctx){
   const cfg=tagSuggestConfig(ctx);
-  if(!cfg || !cfg.menu || !cfg.input) return;
+  if(!cfg.menu || !cfg.input) return;
   const tags=suggestedTags(ctx);
   cfg.menu.innerHTML = '';
   if(!tags.length){
@@ -387,6 +645,12 @@ function firstSuggestedTagName(ctx){
   if(!tags.length) return '';
   const cfg=tagSuggestConfig(ctx);
   return ctx==='filter' && cfg.input.value.trim().startsWith('!') ? '!'+tags[0].name : tags[0].name;
+}
+function addUploadTag(raw){
+  const tag=normalizeTag(raw);
+  if(tag && !chips.includes(tag)) chips.push(tag);
+  renderChips();
+  renderTagSuggestions('upload');
 }
 function handleTagInputKey(e,ctx){
   const cfg=tagSuggestConfig(ctx);
@@ -768,6 +1032,9 @@ function updateVirtualCards(){
     card.style.height = `${pos.height}px`;
     card.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
     card.dataset.orientation = pos.orientation;
+    card.classList.toggle('selected', selectedIds.has(id));
+    const box = card.querySelector('.card-select input');
+    if(box) box.checked = selectedIds.has(id);
   }
 
   renderedCards.forEach((card,id)=>{
@@ -807,6 +1074,9 @@ function createCard(img){
         <button class="card-action" title="下载原图" onclick="event.stopPropagation();dlFile('${img.orig_url}','${origName}')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
+        <button class="card-action del" title="删除" style="${pwd?'':'display:none'}" onclick="event.stopPropagation();delImg(${img.id})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
       </div>
     </div>`;
   const imageEl = div.querySelector('img');
@@ -836,7 +1106,6 @@ function filterTag(name){
   }
 }
 
-/* ────────────────────────────────── SELECTION */
 function imageById(id){
   return imgs.find(x=>String(x.id)===String(id));
 }
@@ -853,9 +1122,11 @@ function updateSelectionUI(){
   const count = selectedIds.size;
   const actions = document.getElementById('bulkActions');
   const countEl = document.getElementById('bulkCount');
+  const delBtn = document.getElementById('bulkDeleteBtn');
   if(actions) actions.classList.toggle('show', count>0);
   document.body.classList.toggle('bulk-actions-on', count>0);
   if(countEl) countEl.textContent = `已选 ${count}`;
+  if(delBtn) delBtn.style.display = pwd ? '' : 'none';
 }
 function toggleSelect(id, checked){
   id = Number(id);
@@ -886,6 +1157,44 @@ function batchDownloadImages(){
     setTimeout(()=>dlFile(img.orig_url, name), i*180);
   });
   toast(`开始下载 ${list.length} 张图片`);
+}
+async function batchDeleteImages(){
+  if(!pwd){ toast('请先登录后再删除','bad'); return; }
+  const list = selectedImages();
+  if(!list.length){ toast('请先选择图片','bad'); return; }
+  if(!confirm(`确定删除选中的 ${list.length} 张图片？`)) return;
+
+  let ok = 0;
+  for(const img of list){
+    try{
+      const r = await fetch(`/api/images/${img.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${pwd}`}});
+      if(r.status===401){
+        setAuth('');
+        try{ localStorage.removeItem(PWKEY); }catch(e){}
+        toast('登录已失效','bad');
+        break;
+      }
+      if(r.ok){
+        ok++;
+        selectedIds.delete(Number(img.id));
+        document.querySelector(`[data-id="${img.id}"]`)?.remove();
+        renderedCards.delete(Number(img.id));
+        const i=imgs.findIndex(x=>x.id===img.id); if(i!==-1) imgs.splice(i,1);
+      }
+    }catch(e){}
+  }
+  if(ok){
+    total=Math.max(0,total-ok);
+    document.getElementById('barCount').innerHTML=`<b>${total}</b> 张图片`;
+    document.getElementById('emptyState').style.display = total===0 ? '' : 'none';
+    updateSelectionUI();
+    scheduleGalleryLayout();
+    await loadTags();
+    toast(`已删除 ${ok} 张图片`);
+  } else {
+    updateSelectionUI();
+    toast('删除失败','bad');
+  }
 }
 
 /* ────────────────────────────────── COPY / DOWNLOAD */
@@ -951,6 +1260,249 @@ function sentinelIsNear(){
   return s.getBoundingClientRect().top <= window.innerHeight + 120;
 }
 
+/* ────────────────────────────────── AUTH MODAL */
+function openAuth(){
+  document.getElementById('authErr').classList.remove('on');
+  document.getElementById('authPwd').value='';
+  document.getElementById('authBackdrop').classList.add('open');
+  setTimeout(()=>document.getElementById('authPwd').focus(),80);
+}
+function closeAuth(){ document.getElementById('authBackdrop').classList.remove('open'); }
+async function submitAuth(){
+  const p = document.getElementById('authPwd').value; if(!p) return;
+  const remember = document.getElementById('rememberMe').checked;
+  const ok = await verifyPwd(p);
+  if(!ok){ document.getElementById('authErr').classList.add('on'); return; }
+  setAuth(p);
+  if(remember){ try{localStorage.setItem(PWKEY,p);}catch(e){} }
+  closeAuth();
+  toast('登录成功');
+}
+
+/* ────────────────────────────────── UPLOAD */
+async function loadUploadLimits(){
+  try{
+    const d=await fetch('/api/upload-limits').then(r=>r.json());
+    uploadLimits={...uploadLimits,...d};
+  }catch(e){}
+}
+function openUpload(reset=true){
+  if(!pwd){ openAuth(); toast('请先登录后再上传','bad'); return; }
+  document.getElementById('upOk').style.display='none';
+  document.getElementById('fileInput').value = '';
+  if(reset){
+    document.getElementById('flist').innerHTML='';
+    clearPendingFiles(); chips=[]; renderChips();
+  }
+  renderFileList();
+  renderTagSuggestions('upload');
+  document.getElementById('uploadBackdrop').classList.add('open');
+}
+function closeUpload(){ document.getElementById('uploadBackdrop').classList.remove('open'); closeTagSuggestions('upload'); }
+function clearPendingFiles(){
+  files.forEach(f=>{ if(f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
+  files=[];
+}
+function clearAllPendingFiles(){
+  clearPendingFiles();
+  renderFileList();
+  document.getElementById('fileInput').value = '';
+}
+async function onFiles(f){
+  if(!f || f.length === 0) return;
+  const checked=await validatePendingFiles(Array.from(f));
+  if(!checked.length){ document.getElementById('fileInput').value = ''; return; }
+  const next=checked.map(file=>({ file, previewUrl: URL.createObjectURL(file) }));
+  files=files.concat(next);
+  renderFileList();
+  document.getElementById('fileInput').value = '';
+}
+async function validatePendingFiles(incoming){
+  const maxCount=Number(uploadLimits.max_upload_count)||50;
+  incoming=incoming.filter(file=>file.type.startsWith('image/'));
+  const slots=Math.max(0,maxCount-files.length);
+  if(slots<=0){ toast(`单次最多上传 ${maxCount} 张图片`,'bad'); return []; }
+
+  let droppedCount=0, droppedSize=0, droppedDimension=0, unreadable=0;
+  const accepted=[];
+  for(const file of incoming.slice(0,slots)){
+    if(isFileTooLarge(file)){ droppedSize++; continue; }
+    try{
+      const dim=await getImageDimensions(file);
+      const rejectMax=Number(uploadLimits.reject_max_pixels)||10000;
+      if(rejectMax>0 && (dim.width>rejectMax || dim.height>rejectMax)){ droppedDimension++; continue; }
+      accepted.push(file);
+    }catch(e){ unreadable++; }
+  }
+  if(incoming.length>slots) droppedCount=incoming.length-slots;
+
+  const messages=[];
+  if(droppedCount) messages.push(`超过单次 ${maxCount} 张上限，已忽略 ${droppedCount} 张`);
+  if(droppedSize) messages.push(`${droppedSize} 张图片超过 ${uploadLimits.max_upload_mb}MB`);
+  if(droppedDimension) messages.push(`${droppedDimension} 张图片宽或高超过 ${uploadLimits.reject_max_pixels}px`);
+  if(unreadable) messages.push(`${unreadable} 张图片无法读取尺寸`);
+  if(messages.length) toast(messages.join('；'),'bad');
+  return accepted;
+}
+function isFileTooLarge(file){
+  const maxMB=Number(uploadLimits.max_upload_mb)||50;
+  return file.size > maxMB*1024*1024;
+}
+function getImageDimensions(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{ URL.revokeObjectURL(url); resolve({width:img.naturalWidth,height:img.naturalHeight}); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('invalid image')); };
+    img.src=url;
+  });
+}
+function renderFileList(){
+  const list=document.getElementById('flist'); list.innerHTML='';
+  const head=document.getElementById('flistHead');
+  const title=document.getElementById('flistTitle');
+  if(head) head.classList.toggle('show', files.length>0);
+  if(title) title.textContent=`待上传 ${files.length} 张`;
+  files.forEach((item,i)=>{
+    const file=item.file;
+    const el=document.createElement('div'); el.className='fitem'; el.id=`fi${i}`;
+    el.innerHTML=`<img class="fitem-thumb" src="${item.previewUrl}" alt="">
+      <div class="fitem-main">
+        <span class="fitem-name" title="${esc(file.name)}">${esc(file.name)}</span>
+        <div class="fitem-meta">
+          <span class="fitem-sz">${fmtSz(file.size)}</span>
+          <span class="fitem-st" id="fs${i}">待上传</span>
+        </div>
+      </div>
+      <button class="fitem-rm" type="button" title="移除" onclick="removePendingFile(${i})">✕</button>`;
+    list.appendChild(el);
+  });
+}
+function removePendingFile(i){
+  const item=files[i];
+  if(!item) return;
+  if(item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  files.splice(i,1);
+  renderFileList();
+}
+function fmtSz(b){ return b<1048576 ? (b/1024).toFixed(1)+'KB' : (b/1048576).toFixed(1)+'MB'; }
+function onTagKey(e){
+  handleTagInputKey(e,'upload');
+  if(e.key==='Backspace'&&e.target.value===''&&chips.length){ chips.pop(); renderChips(); renderTagSuggestions('upload'); }
+}
+function rmChip(i){ chips.splice(i,1); renderChips(); renderTagSuggestions('upload'); }
+function renderChips(){
+  const box=document.getElementById('tagsBox'); box.querySelectorAll('.tchip').forEach(c=>c.remove());
+  const inp=document.getElementById('tagTxt');
+  chips.forEach((t,i)=>{
+    const c=document.createElement('span'); c.className='tchip';
+    c.innerHTML=`${t}<button class="tchip-x" onclick="rmChip(${i})">✕</button>`;
+    box.insertBefore(c,inp);
+  });
+}
+async function doUpload(){
+  if(!files.length){ toast('请先选择图片','bad'); return; }
+  if(files.length > (Number(uploadLimits.max_upload_count)||50)){
+    toast(`单次最多上传 ${uploadLimits.max_upload_count} 张图片`,'bad');
+    return;
+  }
+  const tv=document.getElementById('tagTxt').value.trim();
+  if(tv){ addUploadTag(tv); document.getElementById('tagTxt').value=''; }
+  const btn=document.getElementById('doUpBtn'); btn.disabled=true; btn.textContent='上传中…';
+  document.querySelectorAll('.fitem-rm').forEach(b=>b.disabled=true);
+  const pid=`up_${Date.now()}`; const fd=new FormData();
+  files.forEach(item=>fd.append('files',item.file)); fd.append('tags',chips.join(',')); fd.append('progress_id',pid);
+  files.forEach((_,i)=>watchProg(`${pid}_${i}`,i));
+  try{
+    const d=await uploadWithProgress('/api/upload',fd,percent=>{
+      files.forEach((_,i)=>{
+        const s=document.getElementById(`fs${i}`);
+        if(s && !s.classList.contains('ok') && !s.classList.contains('er')) s.textContent=`上传中 ${percent}%`;
+      });
+    });
+    const res=d.results||[]; let ok=0;
+    res.forEach((re,i)=>{
+      const s=document.getElementById(`fs${i}`);
+      if(re.success){ok++;if(s){s.textContent='✓';s.className='fitem-st ok';}}
+      else{if(s){s.textContent='✗';s.className='fitem-st er';}}
+    });
+    const su=document.getElementById('upOk');
+    su.textContent=`✓ 成功上传 ${ok} / ${res.length} 张图片`; su.style.display='';
+    toast(`上传完成 ${ok}/${res.length}`);
+    await loadTags(); await loadImgs(true);
+    setTimeout(closeUpload,1600);
+  }catch(e){ if(e.message!=='unauthorized') toast(e.message||'上传出错','bad'); }
+  btn.disabled=false;
+  document.querySelectorAll('.fitem-rm').forEach(b=>b.disabled=false);
+  btn.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 开始上传';
+}
+function uploadWithProgress(url,formData,onProgress){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',url);
+    xhr.setRequestHeader('Authorization',`Bearer ${pwd}`);
+    xhr.upload.onprogress=e=>{
+      if(!e.lengthComputable) return;
+      onProgress(Math.min(99,Math.round((e.loaded/e.total)*100)));
+    };
+    xhr.onload=()=>{
+      if(xhr.status===401){
+        setAuth('');
+        try{localStorage.removeItem(PWKEY);}catch(e){}
+        toast('密码已失效','bad');
+        closeUpload();
+        reject(new Error('unauthorized'));
+        return;
+      }
+      let data={};
+      try{ data=JSON.parse(xhr.responseText||'{}'); }catch(e){}
+      if(xhr.status<200||xhr.status>=300){
+        reject(new Error(data.error||`HTTP ${xhr.status}`));
+        return;
+      }
+      resolve(data);
+    };
+    xhr.onerror=()=>reject(new Error('network error'));
+    xhr.send(formData);
+  });
+}
+function watchProg(key,idx){
+  const es=new EventSource(`/api/progress/${key}`);
+  const stages={uploading:'上传中',saving_original:'保存',decoding:'解码',converting:'转换 WebP',done:'完成',complete:'完成'};
+  es.onmessage=e=>{
+    try{
+      const m=JSON.parse(e.data); const s=document.getElementById(`fs${idx}`);
+      if(s){
+        if(m.stage==='waiting') return;
+        if(m.stage==='done'||m.stage==='complete'){s.textContent='✓';s.className='fitem-st ok';}
+        else{s.textContent=`${stages[m.stage]||m.stage} ${m.progress||0}%`;}
+      }
+      if(['done','complete','error'].includes(m.stage)) es.close();
+    }catch(e){}
+  };
+  es.onerror=()=>es.close(); setTimeout(()=>es.close(),60000);
+}
+
+/* ────────────────────────────────── DELETE */
+async function delImg(id){
+  if(!confirm('确定删除这张图片？')) return;
+  const p=pwd||prompt('请输入密码:'); if(!p) return;
+  try{
+    const r=await fetch(`/api/images/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${p}`}});
+    if(r.ok){
+      document.querySelector(`[data-id="${id}"]`)?.remove();
+      renderedCards.delete(Number(id));
+      const i=imgs.findIndex(x=>x.id===id); if(i!==-1) imgs.splice(i,1);
+      selectedIds.delete(Number(id));
+      total=Math.max(0,total-1); document.getElementById('barCount').innerHTML=`<b>${total}</b> 张图片`;
+      document.getElementById('emptyState').style.display = total===0 ? '' : 'none';
+      updateSelectionUI();
+      scheduleGalleryLayout();
+      toast('已删除'); await loadTags();
+    } else toast('删除失败','bad');
+  }catch(e){ toast('网络错误','bad'); }
+}
+
 /* ────────────────────────────────── LIGHTBOX */
 function openLb(idx){ lbIdx=idx; renderLb(); document.getElementById('lb').classList.add('open'); document.getElementById('urlPanel').classList.remove('on'); }
 function renderLb(){
@@ -970,6 +1522,125 @@ function renderLb(){
     ti.style.display='none';
   }
   ['lbCopyW','lbCopyO'].forEach(id=>document.getElementById(id).classList.remove('copied'));
+  document.getElementById('lbEditTagsBtn').style.display = pwd ? '' : 'none';
+  document.getElementById('lbEditTitleBtn').style.display = pwd ? '' : 'none';
+  closeLbTagEditor();
+  closeLbTitleEdit();
+}
+function closeLbTagEditor(){
+  document.getElementById('lbTagEditor').classList.remove('on');
+  document.getElementById('lbEditTagsBtn').classList.remove('editing');
+}
+function openLbTagEdit(){
+  if(!pwd){ toast('请先登录后再修改标签','bad'); return; }
+  const img=imgs[lbIdx]; if(!img) return;
+  document.getElementById('urlPanel').classList.remove('on');
+  closeLbTitleEdit();
+  lbEditTags=[...(img.tags||[])];
+  renderLbTagEdit();
+  document.getElementById('lbTagEditor').classList.add('on');
+  document.getElementById('lbEditTagsBtn').classList.add('editing');
+  setTimeout(()=>{ document.getElementById('lbTagInput').focus(); openTagSuggestions('lightbox'); }, 30);
+}
+function closeLbTitleEdit(){
+  document.getElementById('lbTitleEditor').classList.remove('on');
+  document.getElementById('lbEditTitleBtn').classList.remove('editing');
+}
+function openLbTitleEdit(){
+  if(!pwd){ toast('请先登录后再修改标题','bad'); return; }
+  const img=imgs[lbIdx]; if(!img) return;
+  document.getElementById('urlPanel').classList.remove('on');
+  closeLbTagEditor();
+  document.getElementById('lbTitleInput').value = img.title || '';
+  document.getElementById('lbTitleEditor').classList.add('on');
+  document.getElementById('lbEditTitleBtn').classList.add('editing');
+  setTimeout(()=>{ const inp=document.getElementById('lbTitleInput'); inp.focus(); inp.select(); }, 30);
+}
+function cancelLbTitleEdit(){ closeLbTitleEdit(); }
+async function saveLbTitle(){
+  if(!pwd){ toast('请先登录后再修改标题','bad'); return; }
+  const img=imgs[lbIdx]; if(!img) return;
+  const title=document.getElementById('lbTitleInput').value.trim();
+  const btn=document.getElementById('lbTitleSaveBtn');
+  const old=btn.textContent;
+  btn.disabled=true; btn.textContent='保存中…';
+  try{
+    const r=await fetch(`/api/v1/images/${img.id}/title`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json',Authorization:`Bearer ${pwd}`},
+      body:JSON.stringify({title})
+    });
+    if(r.status===401){ setAuth(''); try{localStorage.removeItem(PWKEY);}catch(e){} toast('登录已失效','bad'); return; }
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const updated=await r.json();
+    img.title=updated.title||'';
+    renderLb();
+    toast('标题已更新');
+  }catch(e){
+    toast('标题保存失败','bad');
+  }finally{
+    btn.disabled=false; btn.textContent=old;
+  }
+}
+function renderLbTagEdit(){
+  const box=document.getElementById('lbTagEditBox');
+  box.querySelectorAll('.lb-tag-edit-chip').forEach(el=>el.remove());
+  const input=document.getElementById('lbTagInput');
+  input.value='';
+  lbEditTags.forEach((tag,i)=>{
+    const chip=document.createElement('span');
+    chip.className='lb-tag-edit-chip';
+    chip.innerHTML=`${esc(tag)}<button class="lb-tag-edit-rm" onclick="removeLbEditTag(${i})">✕</button>`;
+    box.insertBefore(chip,input);
+  });
+}
+function addLbEditTag(raw){
+  const tag=normalizeTag(raw);
+  if(tag && !lbEditTags.includes(tag)) lbEditTags.push(tag);
+  renderLbTagEdit();
+  renderTagSuggestions('lightbox');
+}
+function removeLbEditTag(i){
+  lbEditTags.splice(i,1);
+  renderLbTagEdit();
+  renderTagSuggestions('lightbox');
+}
+function lbTagInputKey(e){
+  handleTagInputKey(e,'lightbox');
+  if(e.key==='Backspace'&&e.target.value===''&&lbEditTags.length){
+    lbEditTags.pop();
+    renderLbTagEdit();
+    renderTagSuggestions('lightbox');
+  }
+}
+function cancelLbTagEdit(){ closeLbTagEditor(); }
+async function saveLbTags(){
+  if(!pwd){ toast('请先登录后再修改标签','bad'); return; }
+  const img=imgs[lbIdx]; if(!img) return;
+  const pending=document.getElementById('lbTagInput').value.trim();
+  if(pending) addLbEditTag(pending);
+
+  const btn=document.getElementById('lbTagSaveBtn');
+  const old=btn.textContent;
+  btn.disabled=true; btn.textContent='保存中…';
+  try{
+    const r=await fetch(`/api/v1/images/${img.id}/tags`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json',Authorization:`Bearer ${pwd}`},
+      body:JSON.stringify({tags:lbEditTags})
+    });
+    if(r.status===401){ setAuth(''); try{localStorage.removeItem(PWKEY);}catch(e){} toast('登录已失效','bad'); return; }
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const updated=await r.json();
+    img.tags=updated.tags||[];
+    renderLb();
+    await loadTags();
+    toast('标签已更新');
+  }catch(e){
+    toast('标签保存失败','bad');
+  }finally{
+    btn.disabled=false; btn.textContent=old;
+  }
 }
 async function lbCopy(type){
   const url=type==='webp'?lbW:lbO;
@@ -1006,10 +1677,14 @@ document.addEventListener('keydown',e=>{
   if(lb.classList.contains('open')){
     if(e.key==='ArrowRight'||e.key==='ArrowDown') lbNav(1);
     else if(e.key==='ArrowLeft'||e.key==='ArrowUp') lbNav(-1);
-    else if(e.key==='Escape'){ document.getElementById('urlPanel').classList.remove('on'); closeLb(); }
+    else if(e.key==='Escape'){
+      if(document.getElementById('lbTitleEditor').classList.contains('on')){ closeLbTitleEdit(); return; }
+      if(document.getElementById('lbTagEditor').classList.contains('on')){ closeLbTagEditor(); return; }
+      document.getElementById('urlPanel').classList.remove('on'); closeLb();
+    }
     return;
   }
-  if(e.key==='Escape') closeApiHelp();
+  if(e.key==='Escape'){ closeAuth(); closeUpload(); closeApiHelp(); }
 });
 
 /* ────────────────────────────────── API HELP */
