@@ -197,10 +197,12 @@
   <button class="lb-nav lb-prev" onclick="lbNav(-1)">&#8249;</button>
   <button class="lb-nav lb-next" onclick="lbNav(1)">&#8250;</button>
   <button class="lb-close" onclick="closeLb()">✕</button>
+  <div class="lb-caption" id="lbTitle"></div>
   <div class="lb-stage">
     <img class="lb-img" id="lbImg" src="" alt="">
   </div>
-  <div class="lb-caption" id="lbTitle"></div>
+  <div class="lb-desc" id="lbDescription"></div>
+  <div class="lb-tags" id="lbTags"></div>
 
   <!-- URL fallback panel -->
   <div class="url-panel" id="urlPanel">
@@ -235,9 +237,16 @@
     </div>
   </div>
 
+  <div class="lb-title-editor" id="lbDescEditor">
+    <div class="lb-tag-editor-title">修改简介</div>
+    <textarea class="lb-desc-input" id="lbDescInput" maxlength="2000" placeholder="输入图片简介，可包含网页链接…"></textarea>
+    <div class="lb-tag-editor-actions">
+      <button class="lbtn" onclick="cancelLbDescEdit()">取消</button>
+      <button class="lbtn save" id="lbDescSaveBtn" onclick="saveLbDesc()">保存简介</button>
+    </div>
+  </div>
+
   <div class="lb-bar">
-    <div class="lb-tags" id="lbTags"></div>
-    <div class="lb-sep" id="lbSep" style="display:none"></div>
     <button class="lbtn" id="lbCopyW" onclick="lbCopy('webp')">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       WebP 链接
@@ -257,6 +266,10 @@
     <button class="lbtn" id="lbEditTitleBtn" onclick="openLbTitleEdit()">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
       修改标题
+    </button>
+    <button class="lbtn" id="lbEditDescBtn" onclick="openLbDescEdit()">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      修改简介
     </button>
   </div>
 </div>
@@ -1098,6 +1111,13 @@ function createCard(img){
   return div;
 }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function linkify(text){
+  const safe = esc(String(text||''));
+  return safe.replace(/(https?:\/\/[^\s<>"')\]]+)/g, m=>{
+    const trimmed = m.replace(/[.,;:!?，。；：！？]+$/,'');
+    return `<a href="${trimmed}" target="_blank" rel="noopener noreferrer">${trimmed}</a>${m.slice(trimmed.length)}`;
+  });
+}
 function jsString(s){ return JSON.stringify(String(s)); }
 function filterTag(name){
   if(!activeTags.includes(name)){
@@ -1513,7 +1533,6 @@ function renderLb(){
   document.getElementById('urlWebp').value=lbW; document.getElementById('urlOrig').value=lbO;
   const tg=document.getElementById('lbTags');
   tg.innerHTML=(img.tags||[]).map(t=>`<span class="lb-tag">${esc(t)}</span>`).join('');
-  document.getElementById('lbSep').style.display=(img.tags&&img.tags.length)?'':'none';
   const ti=document.getElementById('lbTitle');
   if(img.title && String(img.title).trim()){
     ti.textContent=String(img.title).trim();
@@ -1521,11 +1540,20 @@ function renderLb(){
   }else{
     ti.style.display='none';
   }
+  const de=document.getElementById('lbDescription');
+  if(img.description && String(img.description).trim()){
+    de.innerHTML=linkify(String(img.description).trim());
+    de.style.display='';
+  }else{
+    de.style.display='none';
+  }
   ['lbCopyW','lbCopyO'].forEach(id=>document.getElementById(id).classList.remove('copied'));
   document.getElementById('lbEditTagsBtn').style.display = pwd ? '' : 'none';
   document.getElementById('lbEditTitleBtn').style.display = pwd ? '' : 'none';
+  document.getElementById('lbEditDescBtn').style.display = pwd ? '' : 'none';
   closeLbTagEditor();
   closeLbTitleEdit();
+  closeLbDescEdit();
 }
 function closeLbTagEditor(){
   document.getElementById('lbTagEditor').classList.remove('on');
@@ -1578,6 +1606,47 @@ async function saveLbTitle(){
     toast('标题已更新');
   }catch(e){
     toast('标题保存失败','bad');
+  }finally{
+    btn.disabled=false; btn.textContent=old;
+  }
+}
+function closeLbDescEdit(){
+  document.getElementById('lbDescEditor').classList.remove('on');
+  document.getElementById('lbEditDescBtn').classList.remove('editing');
+}
+function openLbDescEdit(){
+  if(!pwd){ toast('请先登录后再修改简介','bad'); return; }
+  const img=imgs[lbIdx]; if(!img) return;
+  document.getElementById('urlPanel').classList.remove('on');
+  closeLbTagEditor();
+  closeLbTitleEdit();
+  document.getElementById('lbDescInput').value = img.description || '';
+  document.getElementById('lbDescEditor').classList.add('on');
+  document.getElementById('lbEditDescBtn').classList.add('editing');
+  setTimeout(()=>{ document.getElementById('lbDescInput').focus(); }, 30);
+}
+function cancelLbDescEdit(){ closeLbDescEdit(); }
+async function saveLbDesc(){
+  if(!pwd){ toast('请先登录后再修改简介','bad'); return; }
+  const img=imgs[lbIdx]; if(!img) return;
+  const desc=document.getElementById('lbDescInput').value.trim();
+  const btn=document.getElementById('lbDescSaveBtn');
+  const old=btn.textContent;
+  btn.disabled=true; btn.textContent='保存中…';
+  try{
+    const r=await fetch(`/api/v1/images/${img.id}/description`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json',Authorization:`Bearer ${pwd}`},
+      body:JSON.stringify({description:desc})
+    });
+    if(r.status===401){ setAuth(''); try{localStorage.removeItem(PWKEY);}catch(e){} toast('登录已失效','bad'); return; }
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const updated=await r.json();
+    img.description=updated.description||'';
+    renderLb();
+    toast('简介已更新');
+  }catch(e){
+    toast('简介保存失败','bad');
   }finally{
     btn.disabled=false; btn.textContent=old;
   }
@@ -1677,8 +1746,9 @@ document.addEventListener('keydown',e=>{
   if(lb.classList.contains('open')){
     if(e.key==='ArrowRight'||e.key==='ArrowDown') lbNav(1);
     else if(e.key==='ArrowLeft'||e.key==='ArrowUp') lbNav(-1);
-    else if(e.key==='Escape'){
+    else     if(e.key==='Escape'){
       if(document.getElementById('lbTitleEditor').classList.contains('on')){ closeLbTitleEdit(); return; }
+      if(document.getElementById('lbDescEditor').classList.contains('on')){ closeLbDescEdit(); return; }
       if(document.getElementById('lbTagEditor').classList.contains('on')){ closeLbTagEditor(); return; }
       document.getElementById('urlPanel').classList.remove('on'); closeLb();
     }

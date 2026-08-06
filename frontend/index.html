@@ -93,10 +93,12 @@
   <button class="lb-nav lb-prev" onclick="lbNav(-1)">&#8249;</button>
   <button class="lb-nav lb-next" onclick="lbNav(1)">&#8250;</button>
   <button class="lb-close" onclick="closeLb()">✕</button>
+  <div class="lb-caption" id="lbTitle"></div>
   <div class="lb-stage">
     <img class="lb-img" id="lbImg" src="" alt="">
   </div>
-  <div class="lb-caption" id="lbTitle"></div>
+  <div class="lb-desc" id="lbDescription"></div>
+  <div class="lb-tags" id="lbTags"></div>
 
   <!-- URL fallback panel -->
   <div class="url-panel" id="urlPanel">
@@ -114,8 +116,6 @@
   </div>
 
   <div class="lb-bar">
-    <div class="lb-tags" id="lbTags"></div>
-    <div class="lb-sep" id="lbSep" style="display:none"></div>
     <button class="lbtn" id="lbCopyW" onclick="lbCopy('webp')">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       WebP 链接
@@ -828,6 +828,13 @@ function createCard(img){
   return div;
 }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function linkify(text){
+  const safe = esc(String(text||''));
+  return safe.replace(/(https?:\/\/[^\s<>"')\]]+)/g, m=>{
+    const trimmed = m.replace(/[.,;:!?，。；：！？]+$/,'');
+    return `<a href="${trimmed}" target="_blank" rel="noopener noreferrer">${trimmed}</a>${m.slice(trimmed.length)}`;
+  });
+}
 function jsString(s){ return JSON.stringify(String(s)); }
 function filterTag(name){
   if(!activeTags.includes(name)){
@@ -961,13 +968,19 @@ function renderLb(){
   document.getElementById('urlWebp').value=lbW; document.getElementById('urlOrig').value=lbO;
   const tg=document.getElementById('lbTags');
   tg.innerHTML=(img.tags||[]).map(t=>`<span class="lb-tag">${esc(t)}</span>`).join('');
-  document.getElementById('lbSep').style.display=(img.tags&&img.tags.length)?'':'none';
   const ti=document.getElementById('lbTitle');
   if(img.title && String(img.title).trim()){
     ti.textContent=String(img.title).trim();
     ti.style.display='';
   }else{
     ti.style.display='none';
+  }
+  const de=document.getElementById('lbDescription');
+  if(img.description && String(img.description).trim()){
+    de.innerHTML=linkify(String(img.description).trim());
+    de.style.display='';
+  }else{
+    de.style.display='none';
   }
   ['lbCopyW','lbCopyO'].forEach(id=>document.getElementById(id).classList.remove('copied'));
 }

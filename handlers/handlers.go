@@ -210,6 +210,7 @@ func (h *Handler) Upload(c *gin.Context) {
 	}
 
 	tags := splitTags(c.PostForm("tags"))
+	description := strings.TrimSpace(c.PostForm("description"))
 	progressID := c.PostForm("progress_id")
 
 	var results []UploadResult
@@ -221,7 +222,7 @@ func (h *Handler) Upload(c *gin.Context) {
 			progressStreams[progressKey] = progressCh
 			progressMu.Unlock()
 		}
-		res := h.processFile(fh, tags, progressCh, i, len(files))
+		res := h.processFile(fh, tags, description, progressCh, i, len(files))
 		results = append(results, res)
 		if progressID != "" {
 			go func(key string) {
@@ -245,6 +246,10 @@ func (h *Handler) APIUpload(c *gin.Context) {
 		tagsRaw = c.PostForm("tags")
 	}
 	tags := splitTags(tagsRaw)
+	description := strings.TrimSpace(c.Query("description"))
+	if description == "" {
+		description = strings.TrimSpace(c.PostForm("description"))
+	}
 
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -267,7 +272,7 @@ func (h *Handler) APIUpload(c *gin.Context) {
 
 	var results []UploadResult
 	for i, fh := range files {
-		res := h.processFile(fh, tags, nil, i, len(files))
+		res := h.processFile(fh, tags, description, nil, i, len(files))
 		results = append(results, res)
 	}
 	c.JSON(http.StatusOK, gin.H{"results": results})
@@ -364,6 +369,39 @@ func (h *Handler) UpdateImageTitle(c *gin.Context) {
 	c.JSON(http.StatusOK, toResp(img))
 }
 
+// UpdateImageDescription updates the description of an image.
+func (h *Handler) UpdateImageDescription(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req struct {
+		Description string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid description"})
+		return
+	}
+
+	description := strings.TrimSpace(req.Description)
+	if len(description) > 2000 {
+		description = description[:2000]
+	}
+
+	img, err := h.db.UpdateImageDescription(id, description)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, toResp(img))
+}
+
 // ── SSE progress stream ───────────────────────────────────────────────────────
 
 func (h *Handler) ProgressStream(c *gin.Context) {
@@ -410,38 +448,41 @@ func (h *Handler) ProgressStream(c *gin.Context) {
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 type UploadResult struct {
-	Success  bool     `json:"success"`
-	ID       int64    `json:"id,omitempty"`
-	Filename string   `json:"filename,omitempty"`
-	WebpURL  string   `json:"webp_url,omitempty"`
-	OrigURL  string   `json:"orig_url,omitempty"`
-	Tags     []string `json:"tags,omitempty"`
-	Error    string   `json:"error,omitempty"`
+	Success     bool     `json:"success"`
+	ID          int64    `json:"id,omitempty"`
+	Filename    string   `json:"filename,omitempty"`
+	WebpURL     string   `json:"webp_url,omitempty"`
+	OrigURL     string   `json:"orig_url,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Error       string   `json:"error,omitempty"`
 }
 
 type imageResp struct {
-	ID        int64     `json:"id"`
-	Title     string    `json:"title"`
-	WebpURL   string    `json:"webp_url"`
-	OrigURL   string    `json:"orig_url"`
-	IsGif     bool      `json:"is_gif"`
-	Width     int       `json:"width"`
-	Height    int       `json:"height"`
-	Tags      []string  `json:"tags"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          int64     `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	WebpURL     string    `json:"webp_url"`
+	OrigURL     string    `json:"orig_url"`
+	IsGif       bool      `json:"is_gif"`
+	Width       int       `json:"width"`
+	Height      int       `json:"height"`
+	Tags        []string  `json:"tags"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func toResp(img *database.Image) imageResp {
 	return imageResp{
-		ID:        img.ID,
-		Title:     img.Title,
-		WebpURL:   "/" + img.WebpPath,
-		OrigURL:   "/" + img.OrigPath,
-		IsGif:     img.IsGif,
-		Width:     img.Width,
-		Height:    img.Height,
-		Tags:      img.Tags,
-		CreatedAt: img.CreatedAt,
+		ID:          img.ID,
+		Title:       img.Title,
+		Description: img.Description,
+		WebpURL:     "/" + img.WebpPath,
+		OrigURL:     "/" + img.OrigPath,
+		IsGif:       img.IsGif,
+		Width:       img.Width,
+		Height:      img.Height,
+		Tags:        img.Tags,
+		CreatedAt:   img.CreatedAt,
 	}
 }
 
@@ -516,7 +557,7 @@ func maxUploadRequestBytes() int64 {
 	return maxMB*1024*1024*int64(maxCount) + 10*1024*1024
 }
 
-func (h *Handler) processFile(fh *multipart.FileHeader, tags []string, progressCh chan string, idx, total int) UploadResult {
+func (h *Handler) processFile(fh *multipart.FileHeader, tags []string, description string, progressCh chan string, idx, total int) UploadResult {
 	if progressCh != nil {
 		defer close(progressCh)
 	}
@@ -544,13 +585,14 @@ func (h *Handler) processFile(fh *multipart.FileHeader, tags []string, progressC
 	}
 
 	img := &database.Image{
-		Filename: fh.Filename,
-		WebpPath: result.WebpPath,
-		OrigPath: result.OrigPath,
-		IsGif:    result.IsGif,
-		Width:    result.Width,
-		Height:   result.Height,
-		Size:     result.Size,
+		Filename:    fh.Filename,
+		WebpPath:    result.WebpPath,
+		OrigPath:    result.OrigPath,
+		IsGif:       result.IsGif,
+		Width:       result.Width,
+		Height:      result.Height,
+		Size:        result.Size,
+		Description: description,
 	}
 
 	id, err := h.db.InsertImage(img)
@@ -567,12 +609,13 @@ func (h *Handler) processFile(fh *multipart.FileHeader, tags []string, progressC
 	}
 
 	return UploadResult{
-		Success:  true,
-		ID:       id,
-		Filename: fh.Filename,
-		WebpURL:  "/" + result.WebpPath,
-		OrigURL:  "/" + result.OrigPath,
-		Tags:     tags,
+		Success:     true,
+		ID:          id,
+		Filename:    fh.Filename,
+		WebpURL:     "/" + result.WebpPath,
+		OrigURL:     "/" + result.OrigPath,
+		Tags:        tags,
+		Description: description,
 	}
 }
 

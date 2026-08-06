@@ -739,7 +739,7 @@ button { font-family: var(--font); cursor: pointer; }
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,.95); z-index: 500;
   flex-direction: column; align-items: center; justify-content: center;
-  padding: 56px 52px 80px;
+  padding: 56px 52px 60px;
 }
 .lb.open { display: flex; }
 .lb-img {
@@ -779,12 +779,11 @@ button { font-family: var(--font); cursor: pointer; }
   display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: center;
   min-height: 52px;
 }
-.lb-tags { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.lb-tags { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; justify-content: center; flex-shrink: 0; width: min(92%, 720px); margin-top: 10px; }
 .lb-tag {
   padding: 2px 8px; border-radius: 99px;
   background: rgba(255,255,255,.09); font-size: 11px; color: rgba(255,255,255,.65);
 }
-.lb-sep { width: 1px; height: 18px; background: rgba(255,255,255,.1); flex-shrink: 0; }
 .lbtn {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 0 11px; height: 30px; border-radius: var(--r-sm);
@@ -862,18 +861,44 @@ button { font-family: var(--font); cursor: pointer; }
 .lb-title-input:focus { border-color: rgba(255,255,255,.24); }
 .lb-title-input::placeholder { color: #777; }
 .lb-stage {
-  flex: 1 1 auto; min-height: 0;
+  min-height: 0;
   display: flex; align-items: center; justify-content: center;
   width: 100%;
 }
 .lb-caption {
   flex-shrink: 0;
   width: 100%;
-  padding: 12px 0 6px;
+  padding: 0px 0 10px;
   text-align: center;
   font-size: 13px; font-weight: 600; color: rgba(255,255,255,.9);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.lb-desc {
+  flex-shrink: 0;
+  width: min(92%, 720px);
+  padding: 10px 0 0px;
+  text-align: center;
+  font-size: 12.5px; line-height: 1.65; font-weight: 400;
+  color: rgba(255,255,255,.62);
+  overflow-wrap: break-word; word-break: break-word;
+}
+.lb-desc a {
+  color: #8ab4ff; text-decoration: underline; text-underline-offset: 2px;
+}
+.lb-desc a:hover { color: #b3cdff; }
+.desc-input {
+  height: auto; min-height: 60px; padding: 9px 11px; resize: vertical;
+  line-height: 1.5;
+}
+.lb-desc-input {
+  width: 100%; min-height: 90px; padding: 9px 10px;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+  border-radius: var(--r-sm); color: #fff; font-family: var(--font); font-size: 13px;
+  line-height: 1.5; outline: none; resize: vertical;
+  transition: border-color .15s;
+}
+.lb-desc-input:focus { border-color: rgba(255,255,255,.24); }
+.lb-desc-input::placeholder { color: #777; }
 
 /* URL fallback panel */
 .url-panel {

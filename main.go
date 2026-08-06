@@ -90,6 +90,7 @@ func main() {
 		mgmt.DELETE("/images/:id", h.DeleteImage)       // delete by id
 		mgmt.PUT("/images/:id/tags", h.UpdateImageTags)   // replace image tags
 		mgmt.PUT("/images/:id/title", h.UpdateImageTitle) // update image title
+		mgmt.PUT("/images/:id/description", h.UpdateImageDescription) // update image description
 		mgmt.GET("/images", h.ListImages)               // list with pagination
 		mgmt.GET("/images/:id", h.GetImage)             // get single image info
 	}
