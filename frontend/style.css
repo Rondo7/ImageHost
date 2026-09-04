@@ -65,6 +65,16 @@ body {
 a { text-decoration: none; color: inherit; }
 button { font-family: var(--font); cursor: pointer; }
 
+/* ── ICONS ──
+   All glyphs live in a 24×24 viewBox. Icons are block-level so they never
+   sit on the text baseline; sizes are owned by CSS classes below, not by
+   hard-coded width/height attributes. */
+svg { display: block; flex-shrink: 0; vertical-align: middle; }
+.ic    { width: 14px; height: 14px; }
+.ic-12 { width: 12px; height: 12px; }
+.ic-13 { width: 13px; height: 13px; }
+.ic-22 { width: 22px; height: 22px; }
+
 /* ── HEADER ── */
 .header {
   position: sticky; top: 0; z-index: 300;
@@ -96,8 +106,14 @@ button { font-family: var(--font); cursor: pointer; }
 .header-search {
   flex: 1; display: flex; justify-content: center;
 }
+/* positioned (overflow-free) wrapper so the suggest dropdown is never clipped */
+.search-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+}
 .search-box {
-  position: relative; width: 100%; max-width: 360px;
+  position: relative; width: 100%;
   height: 32px;
   background: var(--c-surface2);
   border: 1px solid var(--c-border);
@@ -110,9 +126,9 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .search-box::-webkit-scrollbar { display: none; }
 .search-box:focus-within { border-color: var(--c-border2); background: var(--c-surface); }
-.search-box svg {
-  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
-  width: 13px; height: 13px; color: var(--c-text3); pointer-events: none;
+.search-box .ic-13 {
+  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+  color: var(--c-text3); pointer-events: none;
 }
 .search-tags { display: contents; }
 .search-chip {
@@ -253,10 +269,11 @@ button { font-family: var(--font); cursor: pointer; }
   white-space: nowrap; flex-shrink: 0;
 }
 .tag-mode-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
   height: 26px; padding: 0 10px; border-radius: 99px;
   border: 1px solid var(--c-border2);
   background: var(--c-surface2); color: var(--c-text2);
-  font-size: 12px; font-weight: 600; flex-shrink: 0;
+  font-size: 12px; font-weight: 600; line-height: 1.6; flex-shrink: 0;
   cursor: pointer; transition: all .15s;
 }
 .tag-mode-toggle:hover { background: var(--c-surface3); color: var(--c-text); }
@@ -443,9 +460,7 @@ button { font-family: var(--font); cursor: pointer; }
   color: #fff;
   transition: background .15s, border-color .15s;
 }
-.card-select-box svg {
-  width: 13px;
-  height: 13px;
+.card-select-box .ic-13 {
   opacity: 0;
   transform: scale(.8);
   transition: opacity .12s, transform .12s;
@@ -455,7 +470,7 @@ button { font-family: var(--font); cursor: pointer; }
   border-color: var(--c-ink);
   color: var(--c-ink-fg);
 }
-.card.selected .card-select-box svg {
+.card.selected .card-select-box .ic-13 {
   opacity: 1;
   transform: scale(1);
 }
@@ -501,7 +516,6 @@ button { font-family: var(--font); cursor: pointer; }
 .card-action:hover { background: rgba(255,255,255,.28); }
 .card-action.del { background: rgba(220,50,40,.45); }
 .card-action.del:hover { background: rgba(220,50,40,.72); }
-.card-action svg { width: 13px; height: 13px; }
 
 .gif-chip {
   position: absolute; top: 8px; right: 8px;
@@ -761,7 +775,7 @@ button { font-family: var(--font); cursor: pointer; }
   position: absolute; top: 50%; transform: translateY(-50%);
   background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.11);
   color: #fff; border-radius: var(--r-sm);
-  width: 36px; height: 52px; cursor: pointer; font-size: 18px;
+  width: 36px; height: 52px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   backdrop-filter: blur(4px); transition: background .15s;
 }
@@ -993,7 +1007,7 @@ button { font-family: var(--font); cursor: pointer; }
   }
   .header { flex-wrap: wrap; height: auto; padding-top: 8px; padding-bottom: 8px; gap: 8px 10px; }
   .header-search { order: 3; flex-basis: 100%; justify-content: center; padding: 0 2px; }
-  .search-box { max-width: none; }
+  .search-wrap { max-width: none; }
   .hide-mobile { display: none !important; }
   .main { padding: 12px; }
   .lb { padding: 48px 42px 72px; }
