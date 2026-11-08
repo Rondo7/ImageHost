@@ -204,8 +204,20 @@
   </button>
   <button class="lb-close" onclick="closeLb()">✕</button>
   <div class="lb-caption" id="lbTitle"></div>
-  <div class="lb-stage">
-    <img class="lb-img" id="lbImg" src="" alt="">
+  <div class="lb-stage" id="lbStage">
+    <img class="lb-img" id="lbImg" src="" alt="" draggable="false">
+    <div class="lb-zoom-controls" id="lbZoomControls" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+      <button class="lb-zoom-btn" onclick="lbZoomStep(-1)" title="缩小 (滚轮向下)" aria-label="缩小">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <span class="lb-zoom-val" id="lbZoomVal" onclick="resetLbZoom(true)" title="点击重置 100%">100%</span>
+      <button class="lb-zoom-btn" onclick="lbZoomStep(1)" title="放大 (滚轮向上)" aria-label="放大">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button class="lb-zoom-btn" id="lbZoomResetBtn" onclick="resetLbZoom(true)" title="重置缩放 (按 0 或双击图片)" aria-label="重置缩放">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </div>
   </div>
   <div class="lb-desc" id="lbDescription"></div>
   <div class="lb-tags" id="lbTags"></div>
@@ -440,6 +452,7 @@ async function init(){
   dz.addEventListener('drop', e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('over');onFiles(e.dataTransfer.files);});
 
   setupTagBarBehavior();
+  initLbZoom();
 
   // 未登录时自动弹出登录框
   if(!pwd) setTimeout(openAuth, 350);
@@ -1557,6 +1570,7 @@ function renderLb(){
   document.getElementById('lbEditTagsBtn').style.display = pwd ? '' : 'none';
   document.getElementById('lbEditTitleBtn').style.display = pwd ? '' : 'none';
   document.getElementById('lbEditDescBtn').style.display = pwd ? '' : 'none';
+  resetLbZoom(false);
   closeLbTagEditor();
   closeLbTitleEdit();
   closeLbDescEdit();
@@ -1742,26 +1756,347 @@ function lbNav(dir){
   if(lbIdx>=imgs.length-4 && !done) loadImgs(false);
   document.getElementById('urlPanel').classList.remove('on'); renderLb();
 }
-function closeLb(){ document.getElementById('lb').classList.remove('open'); }
+function closeLb(){
+  resetLbZoom(false);
+  document.getElementById('lb').classList.remove('open');
+}
 function lbBgClick(e){
+  if(lbDragMoved) { lbDragMoved=false; return; }
   const el=e.target;
-  if(el===document.getElementById('lb') || el.classList.contains('lb-stage')) closeLb();
+  if(el===document.getElementById('lb') || el.classList.contains('lb-stage')){
+    if((lbCurrentScale > 1.05 || lbTargetScale > 1.05) && el.classList.contains('lb-stage')){
+      resetLbZoom(true);
+      return;
+    }
+    closeLb();
+  }
 }
 document.addEventListener('keydown',e=>{
   const lb=document.getElementById('lb');
   if(lb.classList.contains('open')){
+    if(document.getElementById('lbTitleEditor').classList.contains('on') ||
+       document.getElementById('lbDescEditor').classList.contains('on') ||
+       document.getElementById('lbTagEditor').classList.contains('on')){
+      if(e.key==='Escape'){
+        if(document.getElementById('lbTitleEditor').classList.contains('on')){ closeLbTitleEdit(); return; }
+        if(document.getElementById('lbDescEditor').classList.contains('on')){ closeLbDescEdit(); return; }
+        if(document.getElementById('lbTagEditor').classList.contains('on')){ closeLbTagEditor(); return; }
+      }
+      return;
+    }
     if(e.key==='ArrowRight'||e.key==='ArrowDown') lbNav(1);
     else if(e.key==='ArrowLeft'||e.key==='ArrowUp') lbNav(-1);
-    else     if(e.key==='Escape'){
-      if(document.getElementById('lbTitleEditor').classList.contains('on')){ closeLbTitleEdit(); return; }
-      if(document.getElementById('lbDescEditor').classList.contains('on')){ closeLbDescEdit(); return; }
-      if(document.getElementById('lbTagEditor').classList.contains('on')){ closeLbTagEditor(); return; }
-      document.getElementById('urlPanel').classList.remove('on'); closeLb();
-    }
+    else if(e.key==='Escape'){ document.getElementById('urlPanel').classList.remove('on'); closeLb(); }
+    else if(e.key==='+'||e.key==='=') lbZoomStep(1);
+    else if(e.key==='-'||e.key==='_') lbZoomStep(-1);
+    else if(e.key==='0') resetLbZoom(true);
     return;
   }
   if(e.key==='Escape'){ closeAuth(); closeUpload(); closeApiHelp(); }
 });
+
+/* ────────────────────────────────── LIGHTBOX ZOOM & PAN */
+let lbCurrentScale = 1;
+let lbTargetScale = 1;
+let lbCurrentTx = 0;
+let lbCurrentTy = 0;
+let lbTargetTx = 0;
+let lbTargetTy = 0;
+let lbIsDragging = false;
+let lbDragStartX = 0;
+let lbDragStartY = 0;
+let lbDragMoved = false;
+let lbZoomRAF = null;
+const LB_LERP_FACTOR = 0.22;
+
+function resetLbZoom(animate = false) {
+  lbTargetScale = 1;
+  lbTargetTx = 0;
+  lbTargetTy = 0;
+  lbIsDragging = false;
+  if (animate) {
+    startZoomAnimation();
+  } else {
+    stopZoomAnimation();
+    lbCurrentScale = 1;
+    lbCurrentTx = 0;
+    lbCurrentTy = 0;
+    renderLbTransform();
+  }
+}
+
+function startZoomAnimation() {
+  if (!lbZoomRAF) {
+    lbZoomRAF = requestAnimationFrame(zoomAnimTick);
+  }
+}
+
+function stopZoomAnimation() {
+  if (lbZoomRAF) {
+    cancelAnimationFrame(lbZoomRAF);
+    lbZoomRAF = null;
+  }
+}
+
+function zoomAnimTick() {
+  lbZoomRAF = null;
+
+  const dScale = lbTargetScale - lbCurrentScale;
+  const dTx = lbTargetTx - lbCurrentTx;
+  const dTy = lbTargetTy - lbCurrentTy;
+
+  if (Math.abs(dScale) < 0.001 && Math.abs(dTx) < 0.08 && Math.abs(dTy) < 0.08) {
+    lbCurrentScale = lbTargetScale;
+    lbCurrentTx = lbTargetTx;
+    lbCurrentTy = lbTargetTy;
+    renderLbTransform();
+    return;
+  }
+
+  lbCurrentScale += dScale * LB_LERP_FACTOR;
+  lbCurrentTx += dTx * LB_LERP_FACTOR;
+  lbCurrentTy += dTy * LB_LERP_FACTOR;
+
+  renderLbTransform();
+  lbZoomRAF = requestAnimationFrame(zoomAnimTick);
+}
+
+function renderLbTransform() {
+  const img = document.getElementById('lbImg');
+  if (img) {
+    img.style.transform = `translate(${lbCurrentTx}px, ${lbCurrentTy}px) scale(${lbCurrentScale})`;
+  }
+  updateLbZoomUI();
+}
+
+function updateLbZoomUI() {
+  const isZoomed = lbCurrentScale > 1.005 || lbTargetScale > 1.005;
+  const valEl = document.getElementById('lbZoomVal');
+  if (valEl) valEl.textContent = `${Math.round(lbCurrentScale * 100)}%`;
+  const ctrl = document.getElementById('lbZoomControls');
+  if (ctrl) {
+    ctrl.classList.toggle('show', isZoomed);
+  }
+  const stage = document.getElementById('lbStage');
+  if (stage) {
+    stage.classList.toggle('is-zoomed', isZoomed);
+    stage.classList.toggle('is-dragging', lbIsDragging);
+  }
+  const resetBtn = document.getElementById('lbZoomResetBtn');
+  if (resetBtn) {
+    resetBtn.style.opacity = isZoomed ? '1' : '0.45';
+    resetBtn.style.pointerEvents = isZoomed ? 'auto' : 'none';
+  }
+}
+
+function clampLbTranslate(tx, ty, scale) {
+  const stage = document.getElementById('lbStage');
+  const rect = stage ? stage.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
+  const maxTx = Math.max(0, (rect.width * scale - rect.width) / 2 + rect.width * 0.35);
+  const maxTy = Math.max(0, (rect.height * scale - rect.height) / 2 + rect.height * 0.35);
+  return {
+    x: Math.max(-maxTx, Math.min(maxTx, tx)),
+    y: Math.max(-maxTy, Math.min(maxTy, ty))
+  };
+}
+
+function onLbWheel(e) {
+  const lb = document.getElementById('lb');
+  if (!lb || !lb.classList.contains('open')) return;
+  const stage = document.getElementById('lbStage');
+  const img = document.getElementById('lbImg');
+  if (!stage || !img) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const rect = stage.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+
+  const mouseX = e.clientX - (rect.left + rect.width / 2);
+  const mouseY = e.clientY - (rect.top + rect.height / 2);
+
+  const delta = Math.max(-1, Math.min(1, e.deltaY));
+  const zoomFactor = delta < 0 ? 1.18 : (1 / 1.18);
+  let newScale = lbTargetScale * zoomFactor;
+
+  if (newScale <= 1.01) {
+    lbTargetScale = 1;
+    lbTargetTx = 0;
+    lbTargetTy = 0;
+    startZoomAnimation();
+    return;
+  }
+  if (newScale > 8) newScale = 8;
+
+  const imgX = (mouseX - lbTargetTx) / lbTargetScale;
+  const imgY = (mouseY - lbTargetTy) / lbTargetScale;
+
+  let newTx = mouseX - imgX * newScale;
+  let newTy = mouseY - imgY * newScale;
+
+  const clamped = clampLbTranslate(newTx, newTy, newScale);
+  lbTargetScale = newScale;
+  lbTargetTx = clamped.x;
+  lbTargetTy = clamped.y;
+
+  startZoomAnimation();
+}
+
+function lbZoomStep(dir) {
+  const step = dir > 0 ? 1.25 : (1 / 1.25);
+  let newScale = lbTargetScale * step;
+  if (newScale <= 1.02) {
+    resetLbZoom(true);
+    return;
+  }
+  if (newScale > 8) newScale = 8;
+
+  const newTx = lbTargetTx * (newScale / lbTargetScale);
+  const newTy = lbTargetTy * (newScale / lbTargetScale);
+  const clamped = clampLbTranslate(newTx, newTy, newScale);
+
+  lbTargetScale = newScale;
+  lbTargetTx = clamped.x;
+  lbTargetTy = clamped.y;
+  startZoomAnimation();
+}
+
+function onLbDblClick(e) {
+  if (e.target.closest('.lb-zoom-controls')) return;
+  if (lbCurrentScale > 1.05 || lbTargetScale > 1.05) {
+    resetLbZoom(true);
+  } else {
+    const stage = document.getElementById('lbStage');
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    const mouseX = e.clientX - (rect.left + rect.width / 2);
+    const mouseY = e.clientY - (rect.top + rect.height / 2);
+    const target = 2.5;
+    const clamped = clampLbTranslate(mouseX - mouseX * target, mouseY - mouseY * target, target);
+    lbTargetScale = target;
+    lbTargetTx = clamped.x;
+    lbTargetTy = clamped.y;
+    startZoomAnimation();
+  }
+}
+
+function initLbZoom() {
+  const stage = document.getElementById('lbStage');
+  if (!stage) return;
+  stage.addEventListener('wheel', onLbWheel, { passive: false });
+  stage.addEventListener('dblclick', onLbDblClick);
+  stage.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (e.target.closest('.lb-zoom-controls')) return;
+    if (lbCurrentScale <= 1.01 && lbTargetScale <= 1.01) return;
+    stopZoomAnimation();
+    lbIsDragging = true;
+    lbDragStartX = e.clientX - lbCurrentTx;
+    lbDragStartY = e.clientY - lbCurrentTy;
+    lbDragMoved = false;
+    updateLbZoomUI();
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', e => {
+    if (!lbIsDragging) return;
+    const dx = e.clientX - lbDragStartX;
+    const dy = e.clientY - lbDragStartY;
+    if (Math.abs(dx - lbCurrentTx) > 3 || Math.abs(dy - lbCurrentTy) > 3) {
+      lbDragMoved = true;
+    }
+    const clamped = clampLbTranslate(dx, dy, lbCurrentScale);
+    lbTargetTx = clamped.x;
+    lbTargetTy = clamped.y;
+    lbCurrentTx = clamped.x;
+    lbCurrentTy = clamped.y;
+    renderLbTransform();
+  });
+  window.addEventListener('mouseup', () => {
+    if (!lbIsDragging) return;
+    lbIsDragging = false;
+    updateLbZoomUI();
+    if (lbDragMoved) {
+      setTimeout(() => { lbDragMoved = false; }, 60);
+    }
+  });
+
+  let touchStartDist = 0;
+  let touchStartScale = 1;
+  let touchStartMidX = 0;
+  let touchStartMidY = 0;
+  let touchStartX = 0;
+  let touchStartY = 0;
+
+  stage.addEventListener('touchstart', e => {
+    if (e.target.closest('.lb-zoom-controls')) return;
+    if (e.touches.length === 2) {
+      stopZoomAnimation();
+      const t1 = e.touches[0], t2 = e.touches[1];
+      touchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      touchStartScale = lbCurrentScale;
+      const rect = stage.getBoundingClientRect();
+      touchStartMidX = (t1.clientX + t2.clientX) / 2 - (rect.left + rect.width / 2);
+      touchStartMidY = (t1.clientY + t2.clientY) / 2 - (rect.top + rect.height / 2);
+      e.preventDefault();
+    } else if (e.touches.length === 1 && (lbCurrentScale > 1.01 || lbTargetScale > 1.01)) {
+      stopZoomAnimation();
+      touchStartX = e.touches[0].clientX - lbCurrentTx;
+      touchStartY = e.touches[0].clientY - lbCurrentTy;
+      lbIsDragging = true;
+      lbDragMoved = false;
+    }
+  }, { passive: false });
+
+  stage.addEventListener('touchmove', e => {
+    if (e.touches.length === 2 && touchStartDist > 0) {
+      e.preventDefault();
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const factor = dist / touchStartDist;
+      let newScale = Math.min(8, Math.max(1, touchStartScale * factor));
+      if (newScale <= 1.01) {
+        resetLbZoom(false);
+        return;
+      }
+      const clamped = clampLbTranslate(
+        touchStartMidX - (touchStartMidX - lbCurrentTx) * (newScale / lbCurrentScale),
+        touchStartMidY - (touchStartMidY - lbCurrentTy) * (newScale / lbCurrentScale),
+        newScale
+      );
+      lbTargetScale = newScale;
+      lbCurrentScale = newScale;
+      lbTargetTx = clamped.x;
+      lbCurrentTx = clamped.x;
+      lbTargetTy = clamped.y;
+      lbCurrentTy = clamped.y;
+      renderLbTransform();
+    } else if (e.touches.length === 1 && lbIsDragging) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      if (Math.abs(dx - lbCurrentTx) > 3 || Math.abs(dy - lbCurrentTy) > 3) lbDragMoved = true;
+      const clamped = clampLbTranslate(dx, dy, lbCurrentScale);
+      lbTargetTx = clamped.x;
+      lbCurrentTx = clamped.x;
+      lbTargetTy = clamped.y;
+      lbCurrentTy = clamped.y;
+      renderLbTransform();
+    }
+  }, { passive: false });
+
+  stage.addEventListener('touchend', e => {
+    if (e.touches.length < 2) touchStartDist = 0;
+    if (e.touches.length === 0) {
+      lbIsDragging = false;
+      if (lbCurrentScale <= 1.01) {
+        resetLbZoom(true);
+      } else {
+        updateLbZoomUI();
+      }
+    }
+  });
+}
 
 /* ────────────────────────────────── API HELP */
 function openApiHelp(){
